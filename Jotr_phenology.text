@@ -1,0 +1,1029 @@
+Joshua tree phenology
+=====================
+
+Fundamental question: when do Joshua trees flower? What cues likely determine flowering?
+
+
+2020.05.29
+----------
+
+Inspired by a question from Bobby Espinoza at Cate MacGregor's thesis proposal defense, I'm wondering what data we have to bring to bear on when and why Joshua trees flower. Brief text exchange with Chris Smith confirms we might have something here:
+- Chris and I (mostly Chris) have field notes from multiple years since ~2006
+- The National Phenology Network, which has records from 2011-20 at 14 different localities, with many years and hundreds of obs/year at 9 of them
+- iNat observations, which might be supplemented by the creation of a "project" to explicitly solicit phenology records; download as of today has just over 4800 "research grade" observations, about ... 180 of which are tagged or described with the word "flower"
+
+... holy cow, iNaturalist has a *great* interface for dealing with this --- I can use keyboard shortcuts to walk through records matching a query, add phenology annotation, confirm IDs, and mark them as "reviewed" by me so I'm creating my own personal curated dataset. I did about 90 in half an hour once I got the hang of it. Phenology tags are, straighforwardly:
+- flower budding
+- flowering
+- fruiting
+- no evidence of flowering (actually want to have these, too, for predictive analysis)
+
+
+2020.06.18
+----------
+
+Discussed in lab meeting this week: a paper out of the Nat Hist Museum of Florida using iNat data to examine phenology of multiple yuccas, including Joshua tree, [Barve *et al.* 2020](https://doi.org/10.1002/aps3.11315). Some useful insights, including discussion of biases in the data and identification of a *weird* anomalous flowering of both Joshua tree and Mojave yuccas in late fall 2018, essentially limited to JT National Park. Also points to what could be a *very* useful tool for rapid annotation of photos, [ImageAnt](https://gitlab.com/stuckyb/imageant). No attempt made to predict flowering density/frequency or even timing, but this seems like it could be a next step, and they capped image annotation at 1000 per species --- and there seem to be quite a lot more Joshua tree images on iNaturalist than even their full search results.
+
+Thinking about a workflow/structure for an overall project predicting Joshua tree flowering time *and* density. A basic point of logic, seems to me, is that we can do the German tank thing: a photo of fruits at location A on day-of-year Z implies that there were also flowers at location A sometime between the day-of-year 1 and Z.
+
+So, imagine I've got a pile of phenology observations with lon-lat and date. How do I want to handle them?
+
+1. Aggregate observations in space, based on the grid for monthly PRISM data (at least 4km^2)
+2. For each year, model a curve of prop(flowering) vs day-of-year within each grid cell (that has sufficient data ... how do I determine this?)
+3. The time-series curves should have (1) a maximum prop(flowering) and (2) a time of peak flowering
+4. We then want to predict (1) and (2) with monthly PRISM data in some period of time prior to the focal year
+
+
+2021.06.03
+----------
+
+Spent chunks of today and yesterday banging out a protocol manual to give to incoming students, which walks through annotating phenology in iNaturalist.
+
+
+2021.11.19
+----------
+
+Returning to this project as the logical home for more work on proper JT SDMs, as the first stepfrom predicting JT flowering and moth activity.
+
+Long bunny-trail of dependencies to install an updated `embarcadero` BUT here's the model summary for the results of `bart.step()` with Bioclim + state ID (as a numeric value)
+
+```
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ MDR TS MCMT PS PWaQ state.num 
+ 
+Area under the receiver-operator curve 
+AUC = 0.9603208 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.4575514 
+TSS =  0.7962676 
+Resulting type I error rate:  0.09857253 
+Resulting type II error rate:  0.1051599 
+```
+
+Yes okay I found sampling bias.
+
+
+2021.11.22
+----------
+
+Talked about the new [yucca phenology paper](https://doi.org/10.1038/s41598-021-00265-y) with CIS, KH, RF, CM, and CJC --- Colin thinks he can find a spatial effect that would bollix their model, if we can just take a look at the code. Annnnnd ... the code is not accessible. Dryad doi in the paper, but the link's broken. I am going to email them, I guess.
+
+Possible next steps
+- response paper? (mehhhhh but also I'm really that mad and this probably isn't worth it)
+- *better* paper? this is what I'm actually interested in!
+	- really want to go after percent deviance explained by climate
+	- Brenskelle et al. are using *space* for climate variation as much as time, and *we really want time*. If we add space to their model, we can maybe separate those.
+- long-term: modeling 
+
+Attribution vs detection: the basis of determining whether extreme events are attributable to climate change. Detection/attribution.
+- Detection is identifying the probability of a particular event, and its relationship to the "underlying driver"
+- Simulate counterfactual without climate change (or other underlying driver) and see how the probability of the extreme event changes --- if Pr(event|no driver) = 0.01, we are 99% certain the driver is responsible for the event.
+- need a method that is actually explicitly spatial .. which is not yet in BART.
+- go to something like GDD *on a set date each year* as a "decision point"
+- GAM with: flowering? ~ spatial random effect, GDD at Tcrit
+- ... issues of confounding with tree size??
+
+I think what would be interesting would be
+- pull out response curves from Brenskelle et al model, remove interactions because wtf
+- add in spatial random effects, see what happens
+- maybe then get explanation for 2018 anomaly
+
+Moth modeling with data on hand??
+
+
+2021.12.01
+----------
+
+"Fun" discovery: iNat doesn't allow exportation of phenology annotation via its public-facing interface. It's possible through the api, nominally. Pretty sure this
+
+```
+https://api.inaturalist.org/v1/observations?quality_grade=research&place_id=53170&taxon_id=47785&term_id=12&term_value_id=13
+```
+
+Returns json-formatted entries for all Joshua tree records that have plant phenology annotations. I can hack the `get_inat_obs()` function from `rinat` to make this useful, but ... not tonight.
+
+
+2021.12.03
+----------
+
+I made the thing work! Seeing what I can manage within the limits of the API rate throttles. (Building in a time-pause throttle to the `for()` loop and it's sorted.) Have successfully pulled down observations 2010-2021:
+
+```
+       Flower Budding Flowering Fruiting No Evidence of Flowering
+  2010              0         3        0                       11
+  2011              0         1        0                       25
+  2012              1         4        2                       37
+  2013              3        11       12                       62
+  2014              1         5        5                       63
+  2015              1        11        8                       97
+  2016             13        52       22                      237
+  2017             15        33       10                      328
+  2018             55       213       11                      948
+  2019             96       291      201                      991
+  2020              3         7       95                     1085
+  2021             11        23       37                     1277
+```
+
+Not a bad night's fiddling.
+
+
+2022.02.10
+----------
+
+Have had two undergrads, Ana Karina and Odira, running the annotation protocol for the last two weeks, so I'm picking up and re-running the iNat scraping script to see whether we've gained observations. The last time I ran it, I got *6418* observations of all phenology categories.
+
+(Forgot that the API throttling slows this down a fair bit.)
+
+And we're up to *6675*. Okay!
+
+```
+      Flower Budding Flowering Fruiting No Evidence of Flowering
+  2010              0         5        0                       16
+  2011              0         1        0                       27
+  2012              1         4        2                       40
+  2013              3        11       12                       62
+  2014              1         5        5                       63
+  2015              1        11        8                       97
+  2016             13        52       22                      238
+  2017             15        35       10                      327
+  2018             55       213       12                      949
+  2019            100       292      203                      998
+  2020              3         7       95                     1088
+  2021             12        25       37                     1498
+```
+
+Looks like most of the gains are in more recent years, which checks out.
+
+Thinking about how best to set up the undergrads to get going in R and play with what's already annotated. Ultimately I'd like us to be working from a repo on Github, so I'm initializing this project as that repo. But both AK and O will need more basic startup with R.
+
+Skipped my run to figure out rasterizing the observations to match PRISM data; that gave me about 1480 data points. Then after game night with C I stayed up to extract PRISM data for the gridded annualized flowering/no flowering observations, specifically monthly `tmax`, `tmin`, and `ppt` for the year of the observation (`y0`) and the year prior (`y-1`). Might add (`y-2`) if I'm feeling fancy later.
+
+I've just chucked it all into the stepwise BART function in `Embarcadero`; I will sleep now.
+
+### Brainwaves
+
+I've also figured out the next step for this project. Once I have a model predicting pr(flowering), I can *apply it to historical data* to track how the likelihood of Joshua tree flowering has changed across the Mojave over the 20th century.
+
+*OOH* and also: I'm pretty sure Todd E's empirical range map is at a smaller scale (like (500m)^2?) than the PRISM data, which if true means we could approximate a "population density" at the raster grid scale of PRISM, then *see how past flowering relates to present-day density*.
+
+
+2022.02.11
+----------
+
+Stepwise model fitting done!
+
+```
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ tmax.1.y0 ppt.10.y0 ppt.11.y0 ppt.12.y0 tmax.1.y.1 tmax.8.y.1 tmin.1.y.1 tmin.5.y.1 tmin.8.y.1 ppt.1.y.1 ppt.2.y.1 ppt.6.y.1 ppt.7.y.1 ppt.12.y.1 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8584645 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2828542 
+TSS =  0.5771688 
+Resulting type I error rate:  0.2177778 
+Resulting type II error rate:  0.2050534 
+```
+
+```
+> varimp(flr.mod.step)
+                names    varimps
+tmax.1.y0   tmax.1.y0 0.07175319
+ppt.10.y0   ppt.10.y0 0.08344261
+ppt.11.y0   ppt.11.y0 0.07464794
+ppt.12.y0   ppt.12.y0 0.07104528
+tmax.1.y.1 tmax.1.y.1 0.07493133
+tmax.8.y.1 tmax.8.y.1 0.06966168
+tmin.1.y.1 tmin.1.y.1 0.06809284
+tmin.5.y.1 tmin.5.y.1 0.07090161
+tmin.8.y.1 tmin.8.y.1 0.07265584
+ppt.1.y.1   ppt.1.y.1 0.06926962
+ppt.2.y.1   ppt.2.y.1 0.06667055
+ppt.6.y.1   ppt.6.y.1 0.07035342
+ppt.7.y.1   ppt.7.y.1 0.06672964
+ppt.12.y.1 ppt.12.y.1 0.06984446
+```
+
+Well, some of this doesn't make a great deal of sense! The top-ranked predictor is precip in month 10-12 of the flowering year?? Which is .. *after* flowering season. I probably need to think more carefully about how I manage possible predictors.
+
+Zoomed CJC. I've got too many variables, baby!
+
+Only three priors in the model, which have to do with tree splitting, tree depth, and variable importance. In other ML, varimp reflects proportional effect on the model; BART's varimp is "model free", so it *only* refers to proportion of tree splits attributable to the variable. The prior is uniform on which variable should be useful --- so all variables can be pulled with equal probability. I need to implement a nonuniform prior!
+
+BART extension DART adds a Dirichlet prior on varimp, but doesn't work inside embarcadero.
+
+Plague paper uses mean variables and anomalies.
+
+Climate anomalies: Take stack of climate data; time-specific variable minus mean divided variance.
+
+- build out quarterly average/cumulative variables
+- inspect correlations with flowering/not
+
+Going to build composited predictors assuming flowering season is first half of y0; so we can really drop observations from after March of y0.
+
+Stepwise model fitting output!
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year pptCum ppt.y0q1 ppt.y.1q1 ppt.y.1q3 ppt.y.1q4 tmax.y.1q3 tmax.y.1q4 tmin.y0q1 tmin.y.1q1 tmin.y.1q3 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8441615 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3250757 
+TSS =  0.5385552 
+Resulting type I error rate:  0.2622222 
+Resulting type II error rate:  0.1992225
+
+> varimp(flr.mod.step, plots=TRUE)
+                names    varimps
+year             year 0.11123030
+pptCum         pptCum 0.08761523
+ppt.y0q1     ppt.y0q1 0.09394174
+ppt.y.1q1   ppt.y.1q1 0.08238577
+ppt.y.1q3   ppt.y.1q3 0.09479228
+ppt.y.1q4   ppt.y.1q4 0.09221927
+tmax.y.1q3 tmax.y.1q3 0.09142109
+tmax.y.1q4 tmax.y.1q4 0.08876053
+tmin.y0q1   tmin.y0q1 0.08632285
+tmin.y.1q1 tmin.y.1q1 0.08421363
+tmin.y.1q3 tmin.y.1q3 0.08709731
+```
+
+This makes a LOT more biological sense. Year's a big issue, for sure, but then we have precip in y-1 q3, precip in y0 q1, and precip in y-1 q4 --- basically winter precip in the season prior to flowering. Occurs to me that going back to y-1 doesn't actually get me the prior year's rainy season, though inclusion of y-1 q1 may be enough.
+
+```
+partial(flr.mod.step, x.vars=c("year", "ppt.y.1q3", "ppt.y0q1", "ppt.y.1q4"))
+```
+
+HMMM. Is the effect of year just totally driven by 2019? That's the year that allegedly got a second flowering in fall. But all the more reason to use year as a random effect and then partial it out for the predictions on historical data.
+
+Ran Colin's random intercept model, then, and 
+
+```
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ pptCum ppt.y0q1 ppt.y.1q1 ppt.y.1q3 ppt.y.1q4 tmax.y.1q3 tmax.y.1q4 tmin.y0q1 tmin.y.1q1 tmin.y.1q3 
+ 
+Area under the receiver-operator curve 
+AUC = 0.7491956 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3222815 
+TSS =  0.3907872 
+Resulting type I error rate:  0.3866667 
+Resulting type II error rate:  0.2225462 
+```
+
+Committing the repo, pushing to Github.
+
+In the meantime, outputting partial dependecy plots for each of the retained predictors in the stepwise BART result, cross-referencing varimp with qualitative descriptions of predictors' marginal effects on flowering prob below:
+
+```
+year        0.111 --- pretty flat relationship except bump up in 2019, the "anomaly" year
+ppt.y.1q3   0.094 --- increased at 50mm and up
+ppt.y0q1    0.094 --- essentially monotonic increase with more precip
+ppt.y.1q4   0.092 --- decrease (??) at values above 65mm or so? 
+tmax.y.1q3  0.091 --- stepwise decrease at values above 33°C
+tmax.y.1q4  0.089 --- near-flat but increasing with higher values
+pptCum      0.088 --- essentially flat, but much more variable outcomes at values above 250mm
+tmin.y.1q3  0.087 --- monotonic increase with higher temp
+tmin.y0q1   0.086 --- decrease with higher temp?
+tmin.y.1q1  0.084 --- increase with higher temp?
+ppt.y.1q1   0.082 --- decrease with more precip, huh
+```
+
+Iiiiiinteresting. So some indication that the trees flower right after a wetter, colder q1 (see ppt.y0q1 and tmin.y0q1); and are less likely to flower if those conditions were met the previous year (see ppt.y.1q1 and tmin.y.1q1) ... possibly consistent with the "no flowering two years running" hypothesis. 
+
+Next task will be *assembling annual PRISM data* to generate layers for past-flowering-rate prediction. Probably what I want to do is port things to MAJEL where data volume isn't an issue, then get annual data, create new raster layers (1) clipped to the Mojave and (2) summarized into the quarterly totals I've settled on. I can use those rasters for future extractions as the observation dataset expands, too, I think.
+
+
+2022.02.18
+----------
+
+Spent a couple hours at the end of the day figuring out how to set myself up with quarterly PRISM climate data (tmax, tmin, ppt) for the 1981-2010 "normals" period and each year in the archive, cropped to the Mojave, and I think I have it all set to go. 
+
+n.b., PRISM doesn't like (threatens to block IP address!) when you download the same dataset more than twice in a 24-hour period; need to re-run for 1895 as a result.
+
+And, went ahead and figured out data extraction and model-fitting with the new quarterly climate data, running backward from Q1 of the year in which flowers are observed (y0) to Q1 of two years prior (y2). Here is what I get:
+
+```
+ summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty1q1 ppty1q3 ppty2q2 tmaxy2q3 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8398553 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3328997 
+TSS =  0.5450794 
+Resulting type I error rate:  0.2644444 
+Resulting type II error rate:  0.1904762 
+```
+
+Only FOUR climate predictors?? And
+
+```
+> varimp(flr.mod.step, plots=TRUE)
+            names   varimps
+year         year 0.2231257
+ppty1q1   ppty1q1 0.1884680
+ppty1q3   ppty1q3 0.1891063
+ppty2q2   ppty2q2 0.2009596
+tmaxy2q3 tmaxy2q3 0.1983404
+```
+
+... that actually doesn't look like I broke the stepwise fitting?
+
+The partials plots are borked, hmmm. But the RI version doesn't look awful:
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty1q1 ppty1q3 ppty2q2 tmaxy2q3 
+ 
+Area under the receiver-operator curve 
+AUC = 0.711935 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2408528 
+TSS =  0.3385099 
+Resulting type I error rate:  0.2377778 
+Resulting type II error rate:  0.4237123 
+```
+
+Gotta figure out what's going on with the partials. Pester CJC tomorrow.
+
+Re-running stepwise fitting on the local system/MacBook just to see how it looks a second time.
+
+
+2022.02.19
+----------
+
+And, model output this morning:
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty1q1 ppty1q3 ppty2q2 tmaxy2q3 
+ 
+Area under the receiver-operator curve 
+AUC = 0.839702 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3366278 
+TSS =  0.5432718 
+Resulting type I error rate:  0.2711111 
+Resulting type II error rate:  0.1856171 
+```
+
+```
+> varimp(flr.mod.step, plots=TRUE)
+            names   varimps
+year         year 0.2237412
+ppty1q1   ppty1q1 0.1918054
+ppty1q3   ppty1q3 0.1894839
+ppty2q2   ppty2q2 0.1989325
+tmaxy2q3 tmaxy2q3 0.1960370
+```
+
+So that's what turned up before. And the partials plots look right this time, whew.
+
+```
+            names   varimps  effect is
+year         year 0.2237412   huge pos if 2019 (lol)
+ppty1q1   ppty1q1 0.1918054   ~neg (??)
+ppty1q3   ppty1q3 0.1894839   ~pos
+ppty2q2   ppty2q2 0.1989325   ~pos
+tmaxy2q3 tmaxy2q3 0.1960370   ~neg
+```
+
+So an issue with 2019 remains that weird second flowering ... I may need to figure it out in greater detail.
+
+Random-intercept model:
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty1q1 ppty1q3 ppty2q2 tmaxy2q3 
+ 
+Area under the receiver-operator curve 
+AUC = 0.7339823 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2035392 
+TSS =  0.3548947 
+Resulting type I error rate:  0.2311111 
+Resulting type II error rate:  0.4139942 
+```
+
+Okay, gonna figure out how to deal with the second flowering in 2019. I think I just ... shift all the time references to account for the late bit?
+
+Got that figured out, re-running model fitting, whee.
+
+New full BART model:
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty0q1 ppty1q3 ppty2q1 ppty2q2 ppty2q3 tmaxy2q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8471612 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3038491 
+TSS =  0.5548105 
+Resulting type I error rate:  0.2333333 
+Resulting type II error rate:  0.2118562 
+```
+
+Okay, that's a substantially longer predictor list ...
+
+```
+> varimp(flr.mod.step, plots=TRUE)
+            names   varimps
+year         year 0.1191741
+ppty0q1   ppty0q1 0.1168504
+ppty1q3   ppty1q3 0.1043987
+ppty2q1   ppty2q1 0.1098998
+ppty2q2   ppty2q2 0.1079082
+ppty2q3   ppty2q3 0.1050237
+tmaxy2q3 tmaxy2q3 0.1115978
+ppty2q4   ppty2q4 0.1109455
+tmaxy2q4 tmaxy2q4 0.1142018
+```
+
+hmmmmm. 
+
+```
+   names   varimps  effect is
+    year 0.1191741  conspicuous spike at 2019.5, otherwise ~flat
+ ppty0q1 0.1168504  ~pos
+ ppty1q3 0.1043987  ~hump shaped, max at 50mm
+ ppty2q1 0.1098998  ~pos
+ ppty2q2 0.1079082  ~weakly pos
+ ppty2q3 0.1050237  ~weakly pos, step up at 25mm
+tmaxy2q3 0.1115978  ~neg, step down at 35°C
+ ppty2q4 0.1109455  ~weakly neg
+tmaxy2q4 0.1142018  ~hump shaped, maximum at 30°C
+```
+
+Fitting the RI model
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty0q1 ppty1q3 ppty2q1 ppty2q2 ppty2q3 tmaxy2q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8229608 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.276614 
+TSS =  0.5009589 
+Resulting type I error rate:  0.1977778 
+Resulting type II error rate:  0.3012634 
+```
+
+Figured out how to programatically parse the model object for predictors and then pull in the necessary data to make a prediction layer for a new year! BUT the prediction output is just a raster with every cell = 0.5. Have messaged CJC on Slack.
+
+
+2022.02.20
+----------
+
+Figured out (while chatting with C) that there's just an issue with saving/reloading the random-intercept model objects. Good news is that this means I could run the fitting-prediction pipeline as long as I do it in the same script/session. Did that, and very rapidly ran predictions over 1900-2020; just downloaded all the output to local for analysis.
+
+Got it figured! Quick and dirty plotting of prob(flowering) over time shows a decline in the late 40s, a pulse in 1975-1985, and declines since 1985 to lower than anything seen in the 20th century by today. Variability across space and time is *huge*, but nevertheless ... I think this fits with what we know.
+
+Zoom with CJC:
+- more data will be good
+- if we want to project into the future, should get started on it now
+- also think about potential counterfactual --- identifying "drivers"
+	- IPCC language on "attribution"
+		- big-A Attributions means simulating "externalities" with and without climate change
+		- multi-step attribution: do the attribution on the externality --- "50 people died in this heatwave *which was* 5 times more likely because of CC"
+	- WE could go into the literature for "megadrought" attribution; if we can link JT flowering to "megadrought"
+- visualize trends across space --- think new raster layer
+- would be standard-ish to use 1900-1930 as a baseline
+- partials should work ... 
+
+"timing and abruptness of ecological impacts of climate change"/"horizons" paper ---- ahh could estimate when we can expect to go 30 years without flowering, which means *extinction*
+- imagine temp/precip space in which flowering is possible
+- for a grid cell in JT range, how long until it (1) leaves flowering conditions and (2) stays out for a whole 30 years?
+
+If this doesn't make it into a *Nature* journal, CJC owes me Nobu delivery.
+
+Where do I get future climate data??
+- find a climatologist who works on western US
+- CJC works with ERA5, projections based on RCP2.6, 4.5, and 7. It's chunkier --- 0.1 degree res instead of 0.04 degree 
+- Colin will consider options for annual time-slices; climatologist might be best available, and existing collabs are a good option, with experience in specific "bias correction" relevant for this
+
+Probably need *3 months* to get the bias-corrected futures figured out, first convo to data in hand.
+
+
+2022.02.23
+----------
+
+Playing around with some more stuff this evening, ahead of briefing CIS tomorrow. 
+
+(1) Got a plot-over-time I don't hate using hex-binned point density, but now less sure about the usefulness of the loess regression for smoothing
+(2) Calculated per-cell correlations between prFL and time, and ... whew, it's not great news. The subset of cells with correlations significant at p < 0.01 are *all* negative (fig: `cell_cor_prFLvTime.pdf`), and 
+(3) Plotted correlation estimates (Spearman's rho) by lat-lon and it looks like the biggest declines are in the *north* (fig: `cell_cor_prFLvTime_pseudomap.pdf`) --- central NV and west of Death Valley. That ... might make sense if precipitation is what's driving this, but it's *bad* for our rubric about where to expect refugia.
+
+Re-running the download script while I brush my teeth to see where the new annotation collection is. 
+
+I had *6418* observations when I started; got to *6675* a couple weeks ago. Now: 7231!
+
+
+2022.02.24
+----------
+
+Talked Chris through this on our weekly call; port from general:
+
+- Relevant comparison is Harrower --- finds unimodal distribution of flowering on intermediate altitudes.
+- How do predictions change across the range? ooh I've (sort of) got that
+	- suggestion: bin that map into different "climate zones" --- climatespace regions?
+	- is flowering declining everywhere?
+	- look at precip over time and see if we can attribute to the megadrought
+- possible validation: 
+	- data about fruiting, seed production, seed weight, and germination from common gardens collection sites --- and there are strong environmental correlates with those things
+	- CIS's 20-yr field notes on flowering presence/intensity --- need someone to turn it into "data" but that's on-the-ground truthing --- give that to Odria or Ana Karina or both
+- Outlining next steps
+	- Todd's empirical map as a proxy for pop density (first paper underway for jaegeriana, still finishing data collection for brevifolia ...) --- it's a ways out, lots still uncertain BUT it's also an analysis that basically slots in the moment we can get it
+	- forward-modeling: try to get that going
+- followup question: if observations are clustered in the SW (esp JTNP!) does that mean we might be mis-predicting regions where biggest possible declines are shown (central/north)? --- I can data-vis this a bit ..
+
+Slacked Colin to make contact with the climate folks, so we can start the long process towards future predictions.
+
+Did some vis comparing predicted flowering 2010-2020 with the actual iNat observations (`obs-vs-prediction.pdf`) and it does look like it validate's Chris's concern about spatial heterogeneity of sampling --- observations in Mojave Nat Preserve help counterbalance heavy concentration in JT Nat Park and the Antelope Valley *but* there are essentially no observations in the north-central region where 1900-2020 declines are strongest (`prFL-vs-time_map.pdf`). But then again, there's decent sampling in the NW, and significant declines are also found there ...
+
+
+2022.02.27
+----------
+
+Sunday tinkering to fold new data into the pipeline; I spent some time Friday running through the (small) number of available Nevada observations that weren't annotated. Prior to today's download (and roughly a month of work by Ana Karina, Odria, and me) we had *1479* "rasterized" flowering/not observations across 2010-2020. I'm going to add in 2021, and that gets us ...
+
+- *7,231* raw observations (my Nevada annotations didn't carry, hm)
+- *1,625* rasterized observations
+
+Discovered in the process there that I'd borked year identifiers in trying to patch over the late-2019 bloom. That's fixed now!
+
+
+2022.03.03
+----------
+
+Running a fresh download call to see how observations have progressed ...
+- Now up to *7,421* observations
+- will have to re-run rasterization and data collection ...
+
+Also taking a look at what I'd get if we ran things up through 2022 already: another 282 observations.
+
+
+
+### Ana Karina (port from general)
+
+Has gotten to `swirl` lesson 9, Functions --- told her to skip ahead to 12 (Looking at Data) and maybe 15 (Base Graphics) before we dive into some data.
+
+Future meetings --- her Thursday class is online but maybe going back to in-person in a couple weeks. Next week could be Zoom, following in-person, but that's Mar 17, when I'm flying up to Seattle, so after Spring Break ... Mar 31?
+
+
+2022.03.05
+----------
+
+Up early on a Saturday, so re-running things with latest data (as of 03.03). Now at *1658* rasterized observations; not a tremendous increase, but more is good. 
+
+Re-run stepwise model output:
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty1q1 ppty1q3 ppty2q1 ppty2q2 tmaxy2q3 ppty2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8400568 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2964262 
+TSS =  0.5315438 
+Resulting type I error rate:  0.2229167 
+Resulting type II error rate:  0.2455395 
+```
+
+That's actually gotten simpler --- here's `varimp` output with qualitative partials descriptions
+
+```
+   names   varimps effect is
+    year 0.1590612 Big spike in 2919!
+ ppty1q1 0.1358251 dropoff (but lots of variability) above 200mm
+ ppty1q3 0.1363671 increased at ~50mm, dropoff, then increasing
+ ppty2q1 0.1398989 ~monotonic increase
+ ppty2q2 0.1446046 dropoff with minimum at 60mm, ~leveling out
+tmaxy2q3 0.1396605 decreasing, spike at ~33°C, then dropoff
+ ppty2q4 0.1445826 ~monotonic decrease
+```
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty1q1 ppty1q3 ppty2q1 ppty2q2 tmaxy2q3 ppty2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.7550012 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2625625 
+TSS =  0.4074642 
+Resulting type I error rate:  0.2645833 
+Resulting type II error rate:  0.3279524 
+```
+
+2022.03.22
+----------
+
+Guiding Ana Karina along, I think. Running a fresh download to see how data annotation is going ...
+- Now up to *7,421* observations
+- Rasterized to *1,734* unique cells
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty1q1 ppty1q3 ppty2q1 ppty2q2 tminy2q2 tmaxy2q3 ppty2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8440346 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3387632 
+TSS =  0.5413347 
+Resulting type I error rate:  0.2925311 
+Resulting type II error rate:  0.1661342 
+```
+
+*Interesting*. No more y0 predictors being kept.
+
+And ... `embarcadero` dependencies were broken in the MacOS update, balls.
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty1q1 ppty1q3 ppty2q1 ppty2q2 tminy2q2 tmaxy2q3 ppty2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.7770314 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3199208 
+TSS =  0.4099167 
+Resulting type I error rate:  0.346473 
+Resulting type II error rate:  0.2436102 
+```
+
+That looks pretty good. AUC has gotten a mite higher. SFTPing down the prediction layers, going for a run.
+
+
+2022.03.23
+----------
+
+And, updated outputs nicely. 
+
+```
+   names   varimps  effect
+    year 0.1389081  spike in 2019, decline in 2020-21 
+ ppty1q1 0.1189713  generally *higher* at ppt < 150mm
+ ppty1q3 0.1243910  ~increasing with greater ppt
+ ppty2q1 0.1213505  clearly increasing with greater ppt
+ ppty2q2 0.1242551  ~decreasing with greater ppt
+tminy2q2 0.1218615  ~increasing with greater tmin, but max at ~7°
+tmaxy2q3 0.1186214  ~decreasing with greater tmax
+ ppty2q4 0.1316410  decreasing with greater ppt
+```
+
+2022.04.07
+----------
+
+Got Chris's scanned field notebooks back to 2003 --- set Ana Karina to transcribing observations from them into a spreadsheet in the same folder, [here](https://drive.google.com/drive/folders/1rP3i1orOKP1yLzRD1XImJvu7OHzDGRgN?usp=sharing)
+
+
+2022.04.25
+----------
+
+Checking in on iNat annotation progress. We're up to *8,544* raw observations across 2010-21. (Holy cow??) Should run and rasterize tomorrow.
+
+
+2022.04.26
+----------
+
+Almost TWO THOUSAND rasterized observations: *1,967*, actually.
+
+```
+         FALSE TRUE
+  2010      18    5
+  2011      28    1
+  2012      19    5
+  2013      19   22
+  2014      36    8
+  2015      49   15
+  2016      72   43
+  2017     118   33
+  2018     166   46
+  2019      57  204
+  2019.5    85   37
+  2020     347   53
+  2021     439   42
+```
+
+New best-fit model from stepwise BART fitting:
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty0q1 ppty1q1 tminy1q1 ppty1q2 ppty1q3 ppty1q4 ppty2q1 ppty2q2 tminy2q2 tmaxy2q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8666385 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2864636 
+TSS =  0.5735015 
+Resulting type I error rate:  0.2392996 
+Resulting type II error rate:  0.1871989 
+```
+
+```
+> varimp(flr.mod.step, plots=FALSE)
+            names    varimps
+year         year 0.09086155
+ppty0q1   ppty0q1 0.07627890
+ppty1q1   ppty1q1 0.07001179
+tminy1q1 tminy1q1 0.07055381
+ppty1q2   ppty1q2 0.07602726
+ppty1q3   ppty1q3 0.07606247
+ppty1q4   ppty1q4 0.07258792
+ppty2q1   ppty2q1 0.07698902
+ppty2q2   ppty2q2 0.07521534
+tminy2q2 tminy2q2 0.07666835
+tmaxy2q3 tmaxy2q3 0.08039890
+ppty2q4   ppty2q4 0.08118742
+tmaxy2q4 tmaxy2q4 0.07715726
+```
+
+hrm. Well, let's see ...
+
+Summary of the resulting RI model:
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty0q1 ppty1q1 tminy1q1 ppty1q2 ppty1q3 ppty1q4 ppty2q1 ppty2q2 tminy2q2 tmaxy2q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.790538 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2806188 
+TSS =  0.4442211 
+Resulting type I error rate:  0.2859922 
+Resulting type II error rate:  0.2697866 
+```
+
+That's actually somewhat worse performance, but not dramatically so. Running new predictions on historical data ...
+
+2022.04.27
+----------
+
+Looking over output from yesterday's work again. New model based on latest data finds a lot of cells with flowering conditions getting more frequent! Those are concentrated in the west; declines are mostly in the central and eastern Mojave, but we recover declining flowering within the bounds of JT National Park. Range-wide, there's not a clear declining trend, though Loess smoothing does still find a maximum in the late 70s. Comparing to late-Feb data, we've gotten more observations (rasterized) in the north and east --- so I think the sampling bias is getting less severe.  
+
+
+2022.05.17
+----------
+
+Short-term to-dos:
+- Slides for all-collab meeting
+
+Mid-term to-dos:
+- pull down and organize PRISM layers to run a 2022 prediction --- does the model recover this year's boom?
+- normalize PRISM data to an arbitrary baseline, maybe 1901-30?
+- run alternate models with 2019.5 (1) removed and (2) treated as part of 2019
+
+
+2022.05.19
+----------
+
+Going to talk about results in tomorrow's all-collab meeting, so naturally I'm re-running everything, LOL. 
+- Figured out how to mean-SD norm the historic climate values to a 1981-2010 baseline
+- Pulled down 2022 Q1 numbers so I can run predictions for the current Big Flowering Year
+- Doing new iNat data download and full model re-run with normed data
+
+New data download: now at *8,628* raw observations, 2010-2021
+
+```
+       Flower Budding Flowering Fruiting No Evidence of Flowering
+  2010              1         5        0                       26
+  2011              0         1        0                       33
+  2012              1         4        2                       41
+  2013              3        11       13                       64
+  2014              1         5        5                       68
+  2015              1        13        9                      111
+  2016             13        52       22                      249
+  2017             17        37       11                      351
+  2018             55       214       12                      980
+  2019            105       311      298                     1209
+  2020              3         8       95                     1493
+  2021             13        29       40                     2593
+```
+
+This works out to *1,980* rasterized observations.
+
+Re-running the model on normed data ...
+
+```
+> summary(flr.mod.step)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE
+
+Predictor list:
+ ppty1q1 tmaxy1q1 ppty1q3 ppty2q2 ppty2q4 tmaxy2q4
+
+Area under the receiver-operator curve
+AUC = 0.8646346
+
+Recommended threshold (maximizes true skill statistic)
+Cutoff =  0.2811746
+TSS =  0.5809398
+Resulting type I error rate:  0.2263056
+Resulting type II error rate:  0.1927546
+```
+
+Woah. YEAR is gone??
+
+```
+> varimp(flr.mod.step, plots=FALSE)
+            names   varimps
+ppty1q1   ppty1q1 0.1660539
+tmaxy1q1 tmaxy1q1 0.1626952
+ppty1q3   ppty1q3 0.1566600
+ppty2q2   ppty2q2 0.1740834
+ppty2q4   ppty2q4 0.1689399
+tmaxy2q4 tmaxy2q4 0.1715676
+```
+
+This is super-weird and it maybe obviates the need for the RI modeling?? Looking at that but in the meantime, re-running the whole kit and kaboodle with 2019.5 removed. And also running the model with 2019.5 lumped into 2019. AND also stripping out y2 data from earlier than q4, to try to ease pressure on the stepwise fitting.
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step$fit$model@tree.prior@power flr.mod.step$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty1q1 tmaxy1q1 ppty1q3 ppty2q2 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8653181 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2785683 
+TSS =  0.5854627 
+Resulting type I error rate:  0.1992263 
+Resulting type II error rate:  0.215311 
+```
+
+(Turns out the precip layers for 2022 have a glitch in their extent. Think I can fix this ad hoc, but re-running prediction across everything else in the meantime.)
+
+2022.05.20
+----------
+
+Okay, stepwise model with baseline:
+
+```
+> summary(flr.mod.step.v1)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ ppty1q1 tmaxy1q1 ppty1q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8575031 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2998004 
+TSS =  0.569029 
+Resulting type I error rate:  0.2669246 
+Resulting type II error rate:  0.1640465 
+```
+
+With 2019.5 removed:
+
+```
+> summary(flr.mod.step.v2)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ year ppty1q1 ppty1q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8616568 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.3183094 
+TSS =  0.5653561 
+Resulting type I error rate:  0.2979167 
+Resulting type II error rate:  0.1367273 
+```
+
+With 2019.5 lumped into 2019:
+
+```
+> summary(flr.mod.step.v3)
+Call:  bart train[, 2:ncol(train)] train[, 1] n.trees TRUE 
+ 
+Predictor list: 
+ ppty1q1 tmaxy1q1 ppty1q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.8572533 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2660116 
+TSS =  0.5747589 
+Resulting type I error rate:  0.2030948 
+Resulting type II error rate:  0.2221463 
+```
+
+HUH. Okay, I think this tells me it's time to drop 2019.5 observations, at least provisionally. 
+
+```
+> varimp(flr.mod.step.v2, plots=FALSE)
+            names   varimps
+year         year 0.2026901
+ppty1q1   ppty1q1 0.1910378
+ppty1q3   ppty1q3 0.1927415
+ppty2q4   ppty2q4 0.2030273
+tmaxy2q4 tmaxy2q4 0.2105033
+```
+
+Here's the RI version:
+
+```
+> summary(FLR.ri)
+Call:  rbart_vi as.formula(paste(paste("flr", paste(attr(flr.mod.step.v2$fit$data@x, "term.labels"), collapse = " + "), sep = " ~ "), "year", sep = " - ")) flow flow[, "year"] flr.mod.step.v2$fit$model@tree.prior@power flr.mod.step.v2$fit$model@tree.prior@base 1 TRUE 
+ 
+Predictor list: 
+ ppty1q1 ppty1q3 ppty2q4 tmaxy2q4 
+ 
+Area under the receiver-operator curve 
+AUC = 0.845004 
+ 
+Recommended threshold (maximizes true skill statistic) 
+Cutoff =  0.2757775 
+TSS =  0.5400009 
+Resulting type I error rate:  0.1934236 
+Resulting type II error rate:  0.2665755 
+```
+
+2022.06.01
+----------
+
+Started an Overleaf doc to begin drafting the m.s., shared with C to nudge him on the future-climates collab. 
+
+Thought for the downstream analysis: should actually consider looking at frequency of flowering in a given timespan --- i.e., using the recommended cutoff for binary flowering/not, assess how often flowering occurred in each grid cell, in 5 or 10-year intervals.
+
+
+2022.07.05
+----------
+
+AKA has run code all the way through the prediction step, but is having issues with dbarts tree retention in `save()` files. Solving that forced me to deal with an ongoing issue in the github repo, which I *think* I've fixed; I'm going to clear out the whole kit and kaboodle and re-run it all on MAJEL myself to confirm it's all working, then push an update to Git.
