@@ -6,6 +6,7 @@ Jotr_phenology.text
 # MacOS -------------------------------------
 # General
 **/.DS_Store
+.DS_Store
 .AppleDouble
 .LSOverride
 
