@@ -45,7 +45,7 @@ Usage
 Some of these steps can be skipped once data is downloaded/organized, but to perform the full analysis for the first time, use the scripts in this order:
 
 1. First use `inat_phenology_download.R` to download all of the iNaturalist observations with flowering status annotated;
-2. Then use `PRISM_data-management.R` to download spatially interpolated weather data at 4km resolution, and process it into quarterly aggregates, normalized to 1908-2010;
+2. Then use `PRISM_data-management.R` to download spatially interpolated weather data at 4km resolution, and process it into quarterly aggregates, normalized to 1981-2010;
 3. Then, use `inat_phenology_data-management.R` to match iNat observations to weather results for the years leading up to each observation;
 4. Finally, use `phenology_modeling.R` to builds a BART model predicting flowering status with weather data, which are stored in `output/flowering_obs_climate_normed.csv`; and use `phenology_prediction.R` with the resulting model to predict what flowering was like in years when we have weather data but no iNaturalist observations.
 
