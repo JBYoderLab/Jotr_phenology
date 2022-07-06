@@ -7,7 +7,7 @@ Readme updated 5 July 2022.
 Project description
 -------------------
 
-This repo contains code to (1) use the [iNaturalist](https://inaturalist.org) API to download species observations based on phenology annotations, by modifying code from the [`rinat`](https://cran.r-project.org/web/packages/rinat/index.html) package, and (2) model the relationship between  spatial climate data from [PRISM](https://prism.oregonstate.edu) using Bayesian additive regression tree methods implemented in [`embarcadero`](https://github.com/cjcarlson/embarcadero).
+This repo contains code to (1) use the [iNaturalist](https://inaturalist.org) API to download species observations based on phenology annotations, by modifying code from the [`rinat`](https://cran.r-project.org/web/packages/rinat/index.html) package, and (2) model the relationship between flowering and weather using spatially interpolated records from [PRISM](https://prism.oregonstate.edu) and Bayesian additive regression tree methods implemented in [`embarcadero`](https://github.com/cjcarlson/embarcadero).
 
 
 ![A Joshua tree inflorescence, a conical cluster of white-green flowers](protocol_manual/fig07_flowers.jpeg "A Joshua tree inflorescence in the Black Rock Canyon campground at Joshua Tree National Park")
