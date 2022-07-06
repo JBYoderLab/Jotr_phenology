@@ -1,7 +1,7 @@
 # The basics --------------------------------
 output/**
 data/**
-Jotr_phenology.text # always use this extension for the markdown notes file
+Jotr_phenology.text 
 
 # MacOS -------------------------------------
 # General
