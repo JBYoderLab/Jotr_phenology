@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2022.07.05
+# jby 2022.07.12
 
 # starting up ------------------------------------------------------------
 
@@ -26,13 +26,16 @@ glimpse(test)
 inat_pheno_data <- data.frame(matrix(0,0,7))
 names(inat_pheno_data) <- c("scientific_name", "latitude", "longitude", "url", "image_url", "observed_on", "phenology")
 
-years <- 2010:2021
+years <- 2010:2022 # to run everything
+
+# to read back in and continue
+# inat_pheno_data <- read.csv("data/inat_phenology_data.csv", h=TRUE)
 
 # okay let's pull this stuff down already
 # n.b. for-looping this borks up in a way that makes me suspect it's overloading the API
 for(y in years){
 
-# y <- 2021
+# y <- 2022
 
 bud.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, term_value_id=15, year=y, maxresults=1e4))
 Sys.sleep(5) # throttling under the API limit, maybe?

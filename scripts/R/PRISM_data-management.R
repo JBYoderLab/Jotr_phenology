@@ -1,6 +1,6 @@
 # working with PRISM historical monthlys
 # Assumes MAJEL environment 
-# jby 2022.07.05
+# jby 2022.07.12
 
 # starting up ------------------------------------------------------------
 
@@ -56,7 +56,7 @@ writeRaster(crop(sum(raster(paste("data/PRISM/", pptNorms[mos[1]], "/", pptNorms
 
 
 #-------------------------------------------------------------------------
-# process PRISM data into a timeline archive I can use later
+# process PRISM normals into a timeline archive I can use later
 
 # make places to stash actual values and anomaly values
 if(!dir.exists("data/PRISM/annual")) dir.create("data/PRISM/annual")

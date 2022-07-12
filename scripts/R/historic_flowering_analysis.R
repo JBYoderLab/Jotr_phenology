@@ -17,9 +17,6 @@ library("ggspatial")
 
 library("gdalUtilities")
 
-library("rnaturalearth")
-library("rnaturalearthdata")
-
 library("mapproj")
 library("maptools")
 library("maps")
@@ -47,7 +44,7 @@ files <- list.files("output/BART/predictions", pattern=".bil", full=TRUE)
 MojExt <- extent(-119, -112, 33, 38)
 
 histStack <- raster::stack(sapply(files, function(x) crop(raster::raster(x), MojExt)))
-names(histStack) <- paste("prFL",1901:2022,sep=".")
+names(histStack) <- paste("prFL",1901:2021,sep=".")
 projection(histStack)<-CRS("+init=epsg:4269")
 
 histStack
@@ -207,7 +204,7 @@ ggplot() + geom_linerange(data=sum.hist.flowering, aes(x=year, ymin=lo95PrFL, ym
 
 geom_hline(yintercept=median(filter(hist.flowering, year<1930)$prFL), linetype=2) + geom_smooth(data=sub.hist.flowering, aes(x=year, y=prFL), method="loess", span=0.5, color=park_palette("JoshuaTree")[6], se=FALSE) + annotate("text", x=2021, y=1.05*median(filter(sub.hist.flowering, year<1930)$prFL), label="Median, 1900-1929", hjust=1, vjust=0, size=3) +
 
-labs(x="Year", y="Probability of flowering") + theme_ipsum() + theme(legend.position="none")
+labs(x="Year", y="Probability of flowering") + dark_mode(theme_ipsum()) + theme(legend.position="none", plot.background=element_rect(color="black"))
 
 }
 dev.off()
