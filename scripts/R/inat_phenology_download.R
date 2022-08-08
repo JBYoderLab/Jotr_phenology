@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2022.07.12
+# jby 2022.08.08
 
 # starting up ------------------------------------------------------------
 
@@ -8,6 +8,8 @@
 # setwd("~/Documents/Academic/Active_projects/Jotr_phenology")
 
 library("tidyverse")
+library("sf")
+library("raster")
 
 source("scripts/R/get_inat.R") # attaches rinat and hacks the key function
 
@@ -66,6 +68,25 @@ write.table(inat_pheno_data, "data/inat_phenology_data.csv", sep=",", col.names=
 glimpse(inat_pheno_data)
 table(inat_pheno_data$year, inat_pheno_data$phenology)
 
+
+#-------------------------------------------------------------------------
+# separate (sub)species
+
+# identify (sub)species
+# flr.clim <- read.csv("output/flowering_obs_climate_v2.csv", h=TRUE)
+jtssps <- read_sf("data/Jotr_range.kml")
+
+obs_in_ssp <- st_join(st_as_sf(inat_pheno_data, coords=c("longitude", "latitude"), crs=crs(jtssps)), jtssps, join = st_within) %>% cbind(inat_pheno_data[,c("longitude", "latitude")]) %>% as.data.frame(.) %>% dplyr::select(-geometry, -Description) %>% mutate(Name = gsub("(\\w+) Joshua tree range", "\\1", Name)) %>% rename(type=Name) %>% dplyr::select(latitude, longitude, type, year, observed_on, phenology)
+
+glimpse(obs_in_ssp)
+
+write.table(obs_in_ssp, "data/inat_phenology_data_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+table(obs_in_ssp$phenology, obs_in_ssp$type)
+table(obs_in_ssp$type)
+
+
+#-------------------------------------------------------------------------
 # visualize, if you like
 inat_pheno_data <- read.csv("data/inat_phenology_data.csv", h=TRUE)
 

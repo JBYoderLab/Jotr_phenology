@@ -1,4 +1,4 @@
-Studying Joshua tree flowering with crowd-sourced observations
+Studying Joshua tree flowering with crowd-sourced observations 
 ==============================================================
 
 Readme updated 12 July 2022. 
