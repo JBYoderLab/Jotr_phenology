@@ -1,9 +1,10 @@
 # working with PRISM historical monthlys
 # Assumes MAJEL environment 
-# jby 2022.07.21
+# jby 2022.10.13
 
 # starting up ------------------------------------------------------------
 
+# setwd("~/Documents/Active_projects/Jotr_phenology")
 # setwd("~/Documents/Academic/Active_projects/Jotr_phenology")
 
 library("tidyverse")
@@ -29,7 +30,7 @@ if(!dir.exists("data/PRISM/annual")) dir.create("data/PRISM/annual")
 
 
 # FOR LOOP each year in PRISM
-for(yr in 1895:2022){
+for(yr in 2019:2022){
 
 # yr=2021
 
@@ -136,7 +137,7 @@ writeRaster(vpdmin_sd, paste("data/PRISM/norms_1981-2010/vpdmin_sd_Mojave_1981-2
 
 
 # FOR LOOP to norm the historical data ...
-for(yr in 1895:2022){
+for(yr in 2019:2022){
 
 # yr=1895
 
@@ -203,7 +204,7 @@ if(!dir.exists("data/PRISM/derived_predictors")) dir.create("data/PRISM/derived_
 
 # FOR LOOP over the historical data ...
 # nb, because retrospective, can't do all the way back to 1895
-for(yr in 1900:2022){
+for(yr in 2019:2022){
 
 # yr <- 2020
 

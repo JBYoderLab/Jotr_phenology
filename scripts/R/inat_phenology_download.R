@@ -1,10 +1,10 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2022.08.08
+# jby 2022.10.12
 
 # starting up ------------------------------------------------------------
 
-# setwd("/Volumes/GoogleDrive/Other computers/My MacBook Pro 2020/Documents/Academic/Active_projects/Jotr_phenology")
+# setwd("~/Documents/Active_projects/Jotr_phenology")
 # setwd("~/Documents/Academic/Active_projects/Jotr_phenology")
 
 library("tidyverse")
@@ -60,6 +60,8 @@ if(class(non.y)=="data.frame") non.o <- non.y %>% dplyr::select(scientific_name,
 
 inat_pheno_data <- rbind(inat_pheno_data, bud.o, flo.o, fru.o, non.o)
 
+if(!file.exists("data")) dir.create("data")
+
 write.table(inat_pheno_data, "data/inat_phenology_data.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
 
 } 
@@ -73,17 +75,29 @@ table(inat_pheno_data$year, inat_pheno_data$phenology)
 # separate (sub)species
 
 # identify (sub)species
-# flr.clim <- read.csv("output/flowering_obs_climate_v2.csv", h=TRUE)
-jtssps <- read_sf("data/Jotr_range.kml")
+# inat_pheno_data <- read.csv("data/inat_phenology_data.csv", h=TRUE)
+jtssps <- read_sf("data/Jotr_ssp_range.kml")
 
 obs_in_ssp <- st_join(st_as_sf(inat_pheno_data, coords=c("longitude", "latitude"), crs=crs(jtssps)), jtssps, join = st_within) %>% cbind(inat_pheno_data[,c("longitude", "latitude")]) %>% as.data.frame(.) %>% dplyr::select(-geometry, -Description) %>% mutate(Name = gsub("(\\w+) Joshua tree range", "\\1", Name)) %>% rename(type=Name) %>% dplyr::select(latitude, longitude, type, year, observed_on, phenology)
 
 glimpse(obs_in_ssp)
+table(obs_in_ssp$phenology, obs_in_ssp$type)
+table(obs_in_ssp$type)
 
 write.table(obs_in_ssp, "data/inat_phenology_data_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
-table(obs_in_ssp$phenology, obs_in_ssp$type)
-table(obs_in_ssp$type)
+
+
+# same treatment for CIS field observations
+cis <- read.csv("data/CIS_obsv.csv") %>% mutate(lat = lat_deg+lat_min/60, lon = -(lon_deg+lon_min/60), year=as.numeric(gsub("\\d+/\\d+/(\\d+)", "\\1", date))) %>% dplyr::select(lat, lon, year, location, obs_flowers, obs_fruit, obs_moths, obs_no_flowers)
+
+glimpse(cis)
+
+cis_in_spp <- st_join(st_as_sf(cis, coords=c("lon", "lat"), crs=crs(jtssps)), jtssps, join = st_within) %>% cbind(cis[,c("lon", "lat")]) %>% as.data.frame(.) %>% dplyr::select(-geometry, -Description) %>% mutate(Name = gsub("(\\w+) Joshua tree range", "\\1", Name)) %>% rename(type=Name) %>% dplyr::select(lat, lon, location, type, year, obs_flowers, obs_fruit, obs_moths, obs_no_flowers)
+
+glimpse(cis_in_spp)
+
+write.table(cis_in_spp, "data/CIS_obs_by_spp.csv", col.names=TRUE, row.names=FALSE, sep=",")
 
 
 #-------------------------------------------------------------------------
@@ -94,6 +108,10 @@ flr.raw.ln <- table(inat_pheno_data$year, inat_pheno_data$phenology) %>% as.data
 
 source("../shared/Rscripts/base_graphics.R")
 library("ggdark")
+
+if(!file.exists("output")) dir.create("output")
+if(!file.exists("output/figures")) dir.create("output/figures")
+
 
 {cairo_pdf("output/figures/iNat_obs_raw.pdf", width=11, height=5)
 
