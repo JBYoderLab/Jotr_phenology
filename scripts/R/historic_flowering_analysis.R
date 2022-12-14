@@ -1,28 +1,19 @@
 # Analyzing predicted historical flowering in Joshua tree
 # Assumes local environment
-# jby 2022.07.12
+# jby 2022.11.22
 
 # starting up ------------------------------------------------------------
 
+# setwd("~/Documents/Active_projects/Jotr_phenology")
 # setwd("~/Documents/Academic/Active_projects/Jotr_phenology")
 
 library("tidyverse")
 
-library("rgdal")
 library("raster")
 library("sp")
-library("rgeos")
 library("sf")
-library("ggspatial")
-
-library("gdalUtilities")
-
-library("mapproj")
-library("maptools")
-library("maps")
-library("ggmap")
-
 library("hexbin")
+
 
 source("../shared/Rscripts/base.R") # my special mix of personal functions
 source("../shared/Rscripts/base_graphics.R") # my special mix of personal functions
@@ -34,19 +25,41 @@ library("ggdark")
 
 # Jotr SDM and species boundaries
 sdm.pres <- read_sf("../data/Yucca/jotr_BART_sdm_pres", "jotr_BART_sdm_pres")
-spp.ranges <- read_sf("data/Jotr_range.kml")
+spp.ranges <- read_sf("data/Jotr_ssp_range.kml")
 
-yubr.pres <- st_zm(st_intersection(sdm.pres, st_transform(filter(spp.ranges, Name=="Western Joshua tree range"), crs=crs(sdm.pres))))
-yuja.pres <- st_zm(st_intersection(sdm.pres, st_transform(filter(spp.ranges, Name=="Eastern Joshua tree range"), crs=crs(sdm.pres))))
+yubr.pres <- st_zm(st_intersection(sdm.pres, st_transform(filter(spp.ranges, Name=="YUBR"), crs=crs(sdm.pres))))
+yuja.pres <- st_zm(st_intersection(sdm.pres, st_transform(filter(spp.ranges, Name=="YUJA"), crs=crs(sdm.pres))))
 
 # flowering observation data
-obs <- read.csv("output/flowering_obs_climate_v2_subsp.csv") %>% mutate(y2 = year) %>% mutate(year=floor(year), type = factor(type, c("Western", "Eastern")))
+obs <- read.csv("output/flowering_obs_climate_v2_subsp.csv") %>% mutate(y2 = year) %>% mutate(year=floor(year), type = factor(type, c("YUBR", "YUJA")))
 
 # raster files of predicted prFL
+jotr.files <- list.files("output/BART/predictions", pattern=".bil", full=TRUE)
 yubr.files <- list.files("output/BART/predictions.YUBR", pattern=".bil", full=TRUE)
 yuja.files <- list.files("output/BART/predictions.YUJA", pattern=".bil", full=TRUE)
 
 MojExt <- extent(-119, -112, 33, 38) # Mojave extent, maybe useful
+
+# expert validation observations
+vobs <- read.csv("data/Validation_obs_by_spp.csv")
+
+
+# Jotr --------------------------------
+jotr.histStack <- raster::stack(sapply(jotr.files, function(x) crop(raster::raster(x), MojExt)))
+names(jotr.histStack) <- paste("prFL",1900:2022,sep=".")
+projection(jotr.histStack)<-CRS("+init=epsg:4269")
+
+jotr.histStack
+
+jotr.maskHist <- mask(jotr.histStack, st_transform(sdm.pres[,2], crs=4269))
+
+jotr.hist.flowering <- cbind(coordinates(jotr.maskHist), as.data.frame(jotr.maskHist)) %>% filter(!is.na(prFL.2009)) %>% rename(lon=x, lat=y) %>% pivot_longer(starts_with("prFL"), names_to="year", values_to="prFL") %>% mutate(year=as.numeric(gsub("prFL\\.(\\d+)", "\\1", year)))
+
+glimpse(jotr.hist.flowering)
+
+write.table(jotr.hist.flowering, "output/historic_flowering_reconst_jotr.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+
+
 
 # YUBR --------------------------------
 yubr.histStack <- raster::stack(sapply(yubr.files, function(x) crop(raster::raster(x), MojExt)))
@@ -80,15 +93,79 @@ glimpse(yuja.hist.flowering)
 write.table(yuja.hist.flowering, "output/historic_flowering_reconst_YUJA.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
 
 
-# BOTH --------------------------------
-hist.flowering <- rbind(data.frame(type="Western", yubr.hist.flowering), data.frame(type="Eastern", yuja.hist.flowering))
+# YUJA+YUBR modeled separately --------------------------------
+hist.flowering <- rbind(data.frame(type="YUBR", yubr.hist.flowering), data.frame(type="YUJA", yuja.hist.flowering))
 
-write.table(hist.flowering, "output/historic_flowering_reconst.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+write.table(hist.flowering, "output/historic_flowering_reconst_YUBR-YUJA.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+
+#-------------------------------------------------------------------------
+# Validation observations
+
+# best-power prediction thresholds from the original models
+# jotr: 0.26
+# YUBR: 0.30
+# YUJA: 0.23
+
+glimpse(vobs)
+
+valid <- NULL # initialize, in a lazy way
+
+for(yr in unique(vobs$year)){
+
+# yr <- 2005
+
+vsub <- filter(vobs, year==yr)
+
+vsub$jotr_prFlr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.26
+
+vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+vsub$YUBR_Flr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.30
+
+vsub$YUJA_prFlr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+vsub$YUJA_Flr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.23
+
+valid <- rbind(vsub, valid)
+
+}
+
+head(valid) # cool
+
+write.table(valid, "output/expert_obs_validations.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+
+# species-specific models/validation
+
+table(valid$obs_flowers, valid$jotr_Flr) # eesh
+chisq.test(table(valid$obs_flowers, valid$jotr_Flr)) # LOLsob
+
+t.test(jotr_prFlr~obs_flowers, data=valid) # n.s., dammit
+
+vYUBR <- filter(valid, type=="YUBR")
+vYUJA <- filter(valid, type=="YUJA")
+
+t.test(YUBR_prFlr~obs_flowers, data=vYUBR) # p = 0.051 LOL
+t.test(YUJA_prFlr~obs_flowers, data=vYUJA) # n.s.
+chisq.test(table(vYUBR$obs_flowers, vYUBR$YUBR_Flr)) # LOLsob
+chisq.test(table(vYUJA$obs_flowers, vYUJA$YUJA_Flr)) # LOLsob
+
+table(c(vYUBR$obs_flowers,vYUJA$obs_flowers), c(vYUBR$YUBR_Flr, vYUJA$YUJA_Flr)) # eesh
+chisq.test(table(c(vYUBR$obs_flowers,vYUJA$obs_flowers), c(vYUBR$YUBR_Flr, vYUJA$YUJA_Flr))) # LOLsob
+
+# just RY observations of YUBR
+
+t.test(YUBR_prFlr~obs_flowers, data=filter(vYUBR, obs_by=="Ray Yeager"))
+t.test(YUBR_prFlr~obs_flowers, data=filter(vYUBR, obs_by=="CIS")) # p = 0.007053
+
+chisq.test(table(filter(vYUBR, obs_by=="CIS")$obs_flowers, filter(vYUBR, obs_by=="CIS")$YUBR_Flr)) # HMM
+
 
 #-------------------------------------------------------------------------
 # observations versus same-year predictions
 
-hist.flowering <- read.csv("output/historic_flowering_reconst.csv", h=TRUE) %>% mutate(type = factor(type, c("Western", "Eastern")))
+hist.flowering <- read.csv("output/historic_flowering_reconst_YUBR-YUJA.csv", h=TRUE) %>% mutate(type = factor(type, c("YUBR", "YUJA")))
+
+glimpse(hist.flowering)
 
 {cairo_pdf("output/figures/obs-vs-prediction_2021.pdf", width=9, height=5)
 
@@ -164,6 +241,11 @@ dark_mode(theme_minimal()) + theme(legend.position=c(0.85,0.2), legend.key.width
 }
 dev.off()
 
+
+
+#-------------------------------------------------------------------------
+# Individual years
+
 # my birth year, LOL
 {cairo_pdf("output/figures/prediction_1982.pdf", width=5.5, height=5)
 
@@ -209,15 +291,22 @@ dev.off()
 
 
 #-------------------------------------------------------------------------
-# trends within cells
+# TRENDS within cells
 
-cellcors <- hist.flowering %>% group_by(lon,lat,type) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman")))
+
+# cor(flr, yr) --- crude but it's a start -----------------
+
+cellcors <- jotr.hist.flowering %>% group_by(lon,lat) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) # rangewide model
+
+cellcors.sep <- hist.flowering %>% group_by(lon,lat,type) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) # two types together
 
 glimpse(cellcors)
+glimpse(cellcors.sep)
 
-{cairo_pdf("output/figures/prFL-vs-time_correlations.pdf", width=3, height=4)
 
-ggplot(cellcors, aes(x=estimate, fill=p.value<=0.01, color=p.value<=0.01)) + geom_histogram(color=NA) + 
+{cairo_pdf("output/figures/prFL-vs-time_correlations_YUBR-YUJA.pdf", width=3, height=4)
+
+ggplot(cellcors.sep, aes(x=estimate, fill=p.value<=0.01, color=p.value<=0.01)) + geom_histogram(color=NA) + 
 
 scale_fill_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
 scale_color_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
@@ -235,8 +324,26 @@ labs(x=expression("Spearman's"~rho), y="Grid cells") + dark_mode(theme_minimal()
 }
 dev.off()
 
+{cairo_pdf("output/figures/prFL-vs-time_correlations_jotr.pdf", width=3, height=2.5)
+
+ggplot(cellcors, aes(x=estimate, fill=p.value<=0.01, color=p.value<=0.01)) + geom_histogram(color=NA) + 
+
+scale_fill_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
+scale_color_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
+
+#annotate("text", x=0.1, y=150, label="All cells", color=park_palette("JoshuaTree")[7], fontface="bold", family="Arial Narrow") + 
+
+#annotate("text", x=-0.15, y=50, label="Cells with\ncorrelation\np < 0.01", color=park_palette("JoshuaTree")[2], fontface="bold", family="Arial Narrow", lineheight=0.8) + 
+
+geom_vline(xintercept=0) +
+
+labs(x=expression("Spearman's"~rho), y="Grid cells") + dark_mode(theme_minimal()) + theme(legend.position="none", plot.background=element_rect(color="black", fill="black"), plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
+
+}
+dev.off()
+
 # Plot it on a map
-{cairo_pdf("output/figures/prFL-vs-time_map.pdf", width=5.5, height=5)
+{cairo_pdf("output/figures/prFL-vs-time_map_jotr.pdf", width=5.5, height=6)
 
 ggplot(cellcors, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
 
@@ -244,10 +351,107 @@ ggplot(cellcors, aes(x=lon, y=lat, fill=estimate)) + geom_tile() +
 
 scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho)) + labs(x="Longitude", y="Latitude", title="Correlation between probability of flowering and time") + 
 
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
 
 }
 dev.off()
+
+{cairo_pdf("output/figures/prFL-vs-time_map_YUBR-YUJA.pdf", width=5.5, height=6)
+
+ggplot(cellcors.sep, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
+
+#coord_fixed() + 
+
+scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho)) + labs(x="Longitude", y="Latitude", title="Correlation between probability of flowering and time") + 
+
+dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
+
+}
+dev.off()
+
+
+# number of flowering years/decade? -----------------------
+
+# best-power prediction thresholds from the original models
+# jotr: 0.26
+# YUBR: 0.30
+# YUJA: 0.23
+
+flyrs.jotr <- jotr.hist.flowering %>% group_by(lon,lat) %>% summarize(flyrs=length(which(prFL>=0.26))) # rangewide model
+range(jotr.hist.flowering$year) # remember: 1900-2022
+glimpse(flyrs.jotr)
+
+{cairo_pdf("output/figures/flowering-years_jotr.pdf", width=3.5, height=3.5)
+ggplot(flyrs.jotr, aes(x=flyrs)) + geom_histogram() + labs(x = "Years with predicted flowering, 1900-2022", y="Cells")
+}
+dev.off()
+
+
+
+ggplot(jotr.hist.flowering, aes(x=prFL)) + geom_histogram() + labs(x = "Modeled pr(FL)", y="Cells")
+
+
+flyrs.yubr <- hist.flowering |> filter(type=="YUBR") |> group_by(lon,lat) |> summarize(flyrs=length(which(prFL>=0.30))) # YUBR
+flyrs.yuja <- hist.flowering |> filter(type=="YUJA") |> group_by(lon,lat) |> summarize(flyrs=length(which(prFL>=0.23))) # YUJA
+
+flyrs.sep <- rbind(data.frame(type="YUBR", flyrs.yubr), data.frame(type="YUJA", flyrs.yuja))
+
+{cairo_pdf("output/figures/flowering-years_YUBR-YUJA.pdf", width=6, height=3.5)
+ggplot(flyrs.sep, aes(x=flyrs)) + geom_histogram() + facet_wrap("type") + labs(x = "Years with predicted flowering, 1900-2022", y="Cells")
+}
+dev.off()
+
+
+ggplot(hist.flowering, aes(x=prFL)) + geom_histogram() + facet_wrap("type") + labs(x = "Modeled pr(flowering)", y="Cells")
+
+# pre decade ----------------------------------------------
+
+flyrs.dec.jotr <- jotr.hist.flowering %>% mutate(decade=paste(floor(year/10)*10,"-9", sep="")) %>% group_by(lon,lat,decade) %>% summarize(flyrs=length(which(prFL>=0.26)))
+
+glimpse(flyrs.dec.jotr)
+
+ggplot(flyrs.dec.jotr, aes(x=decade, y=flyrs)) + geom_boxplot() + labs(x="Decade", y="Predicted flowering years") # hrmmmm
+
+
+flyrs.dec.yubr <- hist.flowering %>% filter(type=="YUBR") %>% mutate(decade=paste(floor(year/10)*10,"-9", sep="")) %>% group_by(lon,lat,decade) %>% summarize(flyrs=length(which(prFL>=0.3))) %>% mutate(type="YUBR")
+
+flyrs.dec.yuja <- hist.flowering %>% filter(type=="YUJA") %>% mutate(decade=paste(floor(year/10)*10,"-9", sep="")) %>% group_by(lon,lat,decade) %>% summarize(flyrs=length(which(prFL>=0.23))) %>% mutate(type="YUJA")
+
+flyrs.dec.sep <- rbind(flyrs.dec.yubr, flyrs.dec.yuja)
+
+glimpse(flyrs.dec.sep)
+
+ggplot(flyrs.dec.sep, aes(x=decade, y=flyrs, fill=type)) + geom_boxplot() + labs(x="Decade", y="Predicted flowering years") # HRMMMMM
+
+
+
+# Plot it on a map
+{cairo_pdf("output/figures/flyrs_map_jotr.pdf", width=5.5, height=6)
+
+ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs)) + geom_tile() + 
+
+#coord_fixed() + 
+
+scale_fill_distiller(type="div", palette=1, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
+
+dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
+
+}
+dev.off()
+
+{cairo_pdf("output/figures/flyrs_map_YUBR-YUJA.pdf", width=5.5, height=6)
+
+ggplot(flyrs.sep, aes(x=lon, y=lat, fill=flyrs)) + geom_tile() + 
+
+#coord_fixed() + 
+
+scale_fill_distiller(type="div", palette=1, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
+
+dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
+
+}
+dev.off()
+
 
 #-------------------------------------------------------------------------
 # rangewide trends

@@ -1,10 +1,10 @@
 # working with phenology-annotated iNat observations
 # Assumes MAJEL environment 
-# jby 2022.08.08
+# jby 2022.11.08
 
 # starting up ------------------------------------------------------------
 
-# setwd("/Volumes/GoogleDrive/Other computers/My MacBook Pro 2020/Documents/Academic/Active_projects/Jotr_phenology")
+# setwd("~/Documents/Active_projects/Jotr_phenology")
 # setwd("~/Documents/Academic/Active_projects/Jotr_phenology")
 
 library("tidyverse")
@@ -38,7 +38,7 @@ inat$y2 <- inat$year
 inat$y2[inat$year==2019 & month(inat$observed_on)>6] <- 2019.5
 
 flowering <- data.frame(matrix(0,0,5))
-names(flowering) <- c("lon","lat","year", "type", "flr")
+names(flowering) <- c("lon","lat","year","type","flr")
 
 prism_temp_rast <- raster("data/PRISM/annual/ppt_Mojave_2010Q1.bil")
 
@@ -56,11 +56,21 @@ flowering <- rbind(flowering, data.frame(lon=c(yearyes[,"x"],yearno[,"x"]), lat=
 
 }
 
-head(flowering)
-glimpse(flowering) # okay okay okay!
-table(flowering$year, flowering$flr) # think that looks good ...
+head(flowering) # oh right we've lost type
 
-write.table(flowering, "output/flowering_obs_rasterized_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
+# separate (sub)species again
+
+# identify (sub)species
+# inat_pheno_data <- read.csv("data/inat_phenology_data.csv", h=TRUE)
+jtssps <- read_sf("data/Jotr_ssp_range.kml")
+
+flo_in_ssp <- st_join(st_as_sf(flowering, coords=c("lon", "lat"), crs=crs(jtssps)), jtssps, join = st_within) %>% cbind(flowering[,c("lon", "lat")]) %>% as.data.frame(.) %>% dplyr::select(-geometry, -Description) %>% rename(type=Name) %>% dplyr::select(lon, lat, type, year, flr)
+
+glimpse(flo_in_ssp) # okay okay okay!
+table(flo_in_ssp$type, useNA="ifany")
+table(flo_in_ssp$year, flo_in_ssp$flr) # think that looks good ...
+
+write.table(flo_in_ssp, "output/flowering_obs_rasterized_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
 #-------------------------------------------------------------------------
 # attach PRISM data to flowering/not flowering observations
@@ -81,11 +91,11 @@ write.table(flowering, "output/flowering_obs_rasterized_subsp.csv", sep=",", col
 # vpdmaxW0vW1 - difference in max VPD, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- max-VPD difference
 # vpdminW0vW1 - difference in min VPD, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- min-VPD difference
 
-flr.clim <- data.frame(matrix(0,0,ncol(flowering)+13))
-names(flr.clim) <- c(colnames(flowering), "pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1")
+flr.clim <- data.frame(matrix(0,0,ncol(flo_in_ssp)+13))
+names(flr.clim) <- c(colnames(flo_in_ssp), "pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1")
 
 # LOOP over years, because of the current year previous year thing ...
-for(y in unique(flowering$year)){
+for(y in unique(flo_in_ssp$year)){
 
 # y <- 2020 # test condition
 
@@ -95,7 +105,7 @@ yr <- floor(y) # not going to try to lag 2019.5 for this predictor set
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_", yr,".grd", sep=""))
 
 # pull subset of flowering observations for year
-flsub <- subset(flowering, year==y)
+flsub <- subset(flo_in_ssp, year==y)
 flsub <- cbind(flsub, raster::extract(preds, flsub[,c("lon","lat")], df=FALSE))
 
 flr.clim <- rbind(flr.clim,flsub) 

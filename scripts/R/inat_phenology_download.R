@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2022.10.12
+# jby 2022.11.08
 
 # starting up ------------------------------------------------------------
 
@@ -37,7 +37,7 @@ years <- 2010:2022 # to run everything
 # n.b. for-looping this borks up in a way that makes me suspect it's overloading the API
 for(y in years){
 
-# y <- 2022
+# y <- 2010
 
 bud.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, term_value_id=15, year=y, maxresults=1e4))
 Sys.sleep(5) # throttling under the API limit, maybe?
@@ -45,7 +45,7 @@ flo.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, te
 Sys.sleep(5)  
 fru.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, term_value_id=14, year=y, maxresults=1e4))
 Sys.sleep(5)  
-non.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, without_term_value_id="13,14,15", year=y, maxresults=1e4))
+non.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, term_value_id=21, year=y, maxresults=1e4))
 Sys.sleep(5)  
 
 

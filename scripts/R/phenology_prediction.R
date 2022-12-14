@@ -1,5 +1,5 @@
 # Using BARTs to predict historical Joshua tree flowering
-# last used/modified jby, 2022.07.12
+# last used/modified jby, 2022.11.08
 
 # rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -19,10 +19,10 @@ flow2 <- flow %>% filter(year!=2019.5) # drop the weird observations
 
 glimpse(flow2) # 2,328 observations, 9 candidate predictors
 
-yubr <- filter(flow2, type=="Western")
-glimpse(yubr) # 1,280 observations for Y brevifolia
-yuja <- filter(flow2, type=="Eastern")
-glimpse(yuja) # 1,048 for Y jaegeriana
+yubr <- filter(flow2, type=="YUBR")
+glimpse(yubr) # 1,339 observations for Y brevifolia
+yuja <- filter(flow2, type=="YUJA")
+glimpse(yuja) # 1,096 for Y jaegeriana
 
 
 
@@ -32,10 +32,24 @@ glimpse(yuja) # 1,048 for Y jaegeriana
 # Jotr --------------------------------
 if(!dir.exists("output/BART/predictions")) dir.create("output/BART/predictions")
 
-# need to load in the model at some point?!
-# load(file="output/BART/bart.step.models.jotr.Rdata")
+# refitting with vars indicated by varimp:
+jotr.preds <- c("tmaxW0vW1", "pptY0", "tmaxW0", "tminW0")
 
-fixed <- attr(jotr.flr.mod.step$fit[[1]]$data@x, "term.labels")
+jotr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
+	data = flow2,
+	group.by = flow2[,'year'],
+	n.chains = 1,
+	k = 2,
+	power = 2,
+	base = 0.95,
+	keepTrees = TRUE)
+
+summary(jotr.mod)
+
+# need to load in the model at some point?!
+# load(file="output/BART/bart.ri.model.Jotr.Rdata")
+
+fixed <- attr(jotr.mod$fit[[1]]$data@x, "term.labels")
 
 # LOOP over years
 for(yr in 1900:2022){
@@ -45,7 +59,7 @@ for(yr in 1900:2022){
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
 # prediction with the RI predictor (year) removed
-pred.ri0 <- predict(jotr.flr.mod.step, preds[[attr(jotr.flr.mod.step$fit[[1]]$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
+pred.ri0 <- predict(jotr.mod, preds[[attr(jotr.mod$fit[[1]]$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
 
 pred.ri0 # BOOM
 
@@ -53,14 +67,24 @@ writeRaster(pred.ri0, paste("output/BART/predictions/BART_RI_predicted_flowering
 
 }
 
-
-
 # YUBR --------------------------------
 dir.create("output/BART/predictions.YUBR")
 
-load(file="output/BART/bart.step.models.YUBR.Rdata")
+# refitting with vars indicated by varimp:
+yubr.preds <- c("pptY0", "tminW0", "tmaxW0vW1", "tminW0vW1")
 
-fixed <- attr(yubr.flr.mod.step$fit[[1]]$data@x, "term.labels")
+yubr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(yubr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
+	data = yubr,
+	group.by = yubr[,'year'],
+	n.chains = 1,
+	k = 2,
+	power = 2,
+	base = 0.95,
+	keepTrees = TRUE)
+
+summary(yubr.mod)
+
+fixed <- attr(yubr.mod$fit[[1]]$data@x, "term.labels")
 
 # LOOP over years
 for(yr in 1900:2022){
@@ -70,7 +94,7 @@ for(yr in 1900:2022){
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
 # prediction with the RI predictor (year) removed
-pred.ri0 <- predict(yubr.flr.mod.step, preds[[attr(yubr.flr.mod.step$fit[[1]]$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
+pred.ri0 <- predict(yubr.mod, preds[[attr(yubr.mod$fit[[1]]$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
 
 pred.ri0 # BOOM
 
@@ -81,9 +105,21 @@ writeRaster(pred.ri0, paste("output/BART/predictions.YUBR/BART_RI_predicted_flow
 # YUJA --------------------------------
 dir.create("output/BART/predictions.YUJA")
 
-load(file="output/BART/bart.step.models.YUJA.Rdata")
+# refitting with vars indicated by varimp:
+yuja.preds <- c("vpdmaxW0vW1", "tmaxW0", "vpdmaxW0", "pptW0", "pptW0W1")
 
-fixed <- attr(yuja.flr.mod.step$fit[[1]]$data@x, "term.labels")
+yuja.mod <- rbart_vi(as.formula(paste(paste('flr', paste(yuja.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
+	data = yuja,
+	group.by = yuja[,'year'],
+	n.chains = 1,
+	k = 2,
+	power = 2,
+	base = 0.95,
+	keepTrees = TRUE)
+
+summary(yuja.mod)
+
+fixed <- attr(yuja.mod$fit[[1]]$data@x, "term.labels")
 
 # LOOP over years
 for(yr in 1900:2022){
@@ -93,7 +129,7 @@ for(yr in 1900:2022){
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
 # prediction with the RI predictor (year) removed
-pred.ri0 <- predict(yuja.flr.mod.step, preds[[attr(yuja.flr.mod.step$fit[[1]]$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
+pred.ri0 <- predict(yuja.mod, preds[[attr(yuja.mod$fit[[1]]$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
 
 pred.ri0 # BOOM
 
