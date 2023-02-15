@@ -1,6 +1,6 @@
 # Analyzing predicted historical flowering in Joshua tree
 # Assumes local environment
-# jby 2022.11.22
+# jby 2023.01.04
 
 # starting up ------------------------------------------------------------
 
@@ -102,7 +102,7 @@ write.table(hist.flowering, "output/historic_flowering_reconst_YUBR-YUJA.csv", s
 # Validation observations
 
 # best-power prediction thresholds from the original models
-# jotr: 0.26
+# jotr: 0.24
 # YUBR: 0.30
 # YUJA: 0.23
 
@@ -117,13 +117,13 @@ for(yr in unique(vobs$year)){
 vsub <- filter(vobs, year==yr)
 
 vsub$jotr_prFlr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.26
+vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.24
 
-vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$YUBR_Flr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.30
+#vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+#vsub$YUBR_Flr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.30
 
-vsub$YUJA_prFlr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$YUJA_Flr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.23
+#vsub$YUJA_prFlr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+#vsub$YUJA_Flr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.23
 
 valid <- rbind(vsub, valid)
 
@@ -144,10 +144,10 @@ t.test(jotr_prFlr~obs_flowers, data=valid) # n.s., dammit
 vYUBR <- filter(valid, type=="YUBR")
 vYUJA <- filter(valid, type=="YUJA")
 
-t.test(YUBR_prFlr~obs_flowers, data=vYUBR) # p = 0.051 LOL
-t.test(YUJA_prFlr~obs_flowers, data=vYUJA) # n.s.
-chisq.test(table(vYUBR$obs_flowers, vYUBR$YUBR_Flr)) # LOLsob
-chisq.test(table(vYUJA$obs_flowers, vYUJA$YUJA_Flr)) # LOLsob
+t.test(jotr_prFlr~obs_flowers, data=vYUBR) # p = 0.001 HEY
+t.test(jotr_prFlr~obs_flowers, data=vYUJA) # n.s.
+chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_Flr)) # p = 0.015
+chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_Flr)) # n.s.
 
 table(c(vYUBR$obs_flowers,vYUJA$obs_flowers), c(vYUBR$YUBR_Flr, vYUJA$YUJA_Flr)) # eesh
 chisq.test(table(c(vYUBR$obs_flowers,vYUJA$obs_flowers), c(vYUBR$YUBR_Flr, vYUJA$YUJA_Flr))) # LOLsob
@@ -167,43 +167,64 @@ hist.flowering <- read.csv("output/historic_flowering_reconst_YUBR-YUJA.csv", h=
 
 glimpse(hist.flowering)
 
-{cairo_pdf("output/figures/obs-vs-prediction_2021.pdf", width=9, height=5)
+{cairo_pdf("output/figures/obs-vs-prediction_2021.pdf", width=6, height=5)
 
 ggplot() + 
 
-geom_tile(data=filter(hist.flowering, year==2021), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
+geom_tile(data=filter(jotr.hist.flowering, year==2021), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
 
-geom_point(data=filter(obs, year==2021), aes(x=lon, y=lat, shape=flr, color=flr), size=1) + 
-scale_shape_manual(values=c(1,20), name="Flowers seen?") + 
-scale_color_manual(values=c("gray60", park_palette("JoshuaTree")[2]), name="Flowers seen?") +
+geom_point(data=filter(obs, year==2021), aes(x=lon, y=lat, shape=flr, color=flr, size=flr)) + 
+scale_shape_manual(values=c(21,20), name="Flowers seen?") + 
+scale_size_manual(values=c(1.1,1), name="Flowers seen?") + 
+scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], name="Flowers seen?") +
 
 labs(x="Latitude", y="Longitude") +
 
-facet_grid(.~type, scale="free_x") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), plot.margin=unit(c(0.2,0.9,0.1,0.9), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=8), plot.background=element_rect(color="black", fill="black"))
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
 
-{cairo_pdf("output/figures/obs-vs-prediction_2022.pdf", width=9, height=5)
+{cairo_pdf("output/figures/obs-vs-prediction_2022.pdf", width=6, height=5)
 
 ggplot() + 
 
-geom_tile(data=filter(hist.flowering, year==2022), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
+geom_tile(data=filter(jotr.hist.flowering, year==2022), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
 
-geom_point(data=filter(obs, year==2022), aes(x=lon, y=lat, shape=flr, color=flr), size=1) + 
-scale_shape_manual(values=c(1,20), name="Flowers seen?") + 
-scale_color_manual(values=c("gray60", park_palette("JoshuaTree")[2]), name="Flowers seen?") +
+geom_point(data=filter(obs, year==2022), aes(x=lon, y=lat, shape=flr, color=flr, size=flr)) + 
+scale_shape_manual(values=c(21,20), name="Flowers seen?") + 
+scale_size_manual(values=c(1.1,1), name="Flowers seen?") + 
+scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], name="Flowers seen?") +
 
 labs(x="Latitude", y="Longitude") +
 
-facet_grid(.~type, scale="free_x") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), plot.margin=unit(c(0.2,0.9,0.1,0.9), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=8), plot.background=element_rect(color="black", fill="black"))
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
+
+
+
+
+
+# all years with observations, global
+{cairo_pdf("output/figures/obs-vs-prediction_Jotr.pdf", width=9.5, height=7.5)
+
+ggplot() + 
+
+geom_tile(data=filter(jotr.hist.flowering, year%in%2010:2022), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
+
+geom_point(data=obs, aes(x=lon, y=lat, shape=flr, color=flr), size=0.75) + 
+scale_shape_manual(values=c(1,20), name="Flowers seen?") + 
+scale_color_manual(values=c("gray60", park_palette("JoshuaTree")[2]), name="Flowers seen?") +
+
+facet_wrap("year", nrow=3) + 
+
+dark_mode(theme_minimal()) + theme(legend.position=c(0.85,0.2), legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.title=element_blank(), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+
+}
+dev.off()
+
 
 # all years with observations, YUBR
 {cairo_pdf("output/figures/obs-vs-prediction_YUBR.pdf", width=9.5, height=7.5)
@@ -247,44 +268,45 @@ dev.off()
 # Individual years
 
 # my birth year, LOL
-{cairo_pdf("output/figures/prediction_1982.pdf", width=5.5, height=5)
+{cairo_pdf("output/figures/prediction_1982.pdf", width=6, height=5)
 
 ggplot() + 
 
-geom_tile(data=filter(hist.flowering, year==1982), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
+geom_tile(data=filter(jotr.hist.flowering, year==1982), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
 
 labs(x="Latitude", y="Longitude") +
 
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
 
-# the year of McKelvey's description of YUJA
-{cairo_pdf("output/figures/prediction_1935.pdf", width=5.5, height=5)
-
-ggplot() + 
-
-geom_tile(data=filter(hist.flowering, year==1935), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
-
-labs(x="Latitude", y="Longitude") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
 
 
 # year Joshua tree National Monument established
-{cairo_pdf("output/figures/prediction_1936.pdf", width=5.5, height=5)
+{cairo_pdf("output/figures/prediction_1936.pdf", width=6, height=5)
 
 ggplot() + 
 
-geom_tile(data=filter(hist.flowering, year==1936), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
+geom_tile(data=filter(jotr.hist.flowering, year==1936), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
 
 labs(x="Latitude", y="Longitude") +
 
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+
+}
+dev.off()
+
+# earliest year in reconstruction
+{cairo_pdf("output/figures/prediction_1900.pdf", width=6, height=5)
+
+ggplot() + 
+
+geom_tile(data=filter(jotr.hist.flowering, year==1900), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
+
+labs(x="Latitude", y="Longitude") +
+
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
@@ -293,36 +315,11 @@ dev.off()
 #-------------------------------------------------------------------------
 # TRENDS within cells
 
-
 # cor(flr, yr) --- crude but it's a start -----------------
 
-cellcors <- jotr.hist.flowering %>% group_by(lon,lat) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) # rangewide model
-
-cellcors.sep <- hist.flowering %>% group_by(lon,lat,type) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) # two types together
+cellcors <- jotr.hist.flowering %>% group_by(lon,lat) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) %>% ungroup() # rangewide model
 
 glimpse(cellcors)
-glimpse(cellcors.sep)
-
-
-{cairo_pdf("output/figures/prFL-vs-time_correlations_YUBR-YUJA.pdf", width=3, height=4)
-
-ggplot(cellcors.sep, aes(x=estimate, fill=p.value<=0.01, color=p.value<=0.01)) + geom_histogram(color=NA) + 
-
-scale_fill_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
-scale_color_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
-
-#annotate("text", x=0.1, y=150, label="All cells", color=park_palette("JoshuaTree")[7], fontface="bold", family="Arial Narrow") + 
-
-#annotate("text", x=-0.15, y=50, label="Cells with\ncorrelation\np < 0.01", color=park_palette("JoshuaTree")[2], fontface="bold", family="Arial Narrow", lineheight=0.8) + 
-
-geom_vline(xintercept=0) +
-
-facet_grid(type~., scale="free_x") +
-
-labs(x=expression("Spearman's"~rho), y="Grid cells") + dark_mode(theme_minimal()) + theme(legend.position="none", plot.background=element_rect(color="black", fill="black"), plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
-
-}
-dev.off()
 
 {cairo_pdf("output/figures/prFL-vs-time_correlations_jotr.pdf", width=3, height=2.5)
 
@@ -343,114 +340,124 @@ labs(x=expression("Spearman's"~rho), y="Grid cells") + dark_mode(theme_minimal()
 dev.off()
 
 # Plot it on a map
-{cairo_pdf("output/figures/prFL-vs-time_map_jotr.pdf", width=5.5, height=6)
+{cairo_pdf("output/figures/prFL-vs-time_map_jotr.pdf", width=6, height=5)
 
 ggplot(cellcors, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
 
 #coord_fixed() + 
 
-scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho)) + labs(x="Longitude", y="Latitude", title="Correlation between probability of flowering and time") + 
+scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho~", Pr(flowers) vs. time")) + labs(x="Longitude", y="Latitude") + 
 
-dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
 
-{cairo_pdf("output/figures/prFL-vs-time_map_YUBR-YUJA.pdf", width=5.5, height=6)
+# trends within single cells
 
-ggplot(cellcors.sep, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
+declining <- cellcors %>% filter(p.value < 0.01, estimate < 0) 
+increasing <- cellcors %>% filter(p.value < 0.01, estimate > 0) 
+stable <- cellcors %>% filter(estimate > -0.05, estimate < 0.05) 
+
+
+# map with example points highlighted
+{cairo_pdf("output/figures/prFL-vs-time_map_jotr_examples.pdf", width=6, height=5)
+
+ggplot(cellcors, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
 
 #coord_fixed() + 
 
-scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho)) + labs(x="Longitude", y="Latitude", title="Correlation between probability of flowering and time") + 
+geom_point(x=declining$lon[1], y=declining$lat[1], pch=21, color=park_palette("JoshuaTree")[2]) + 
+geom_point(x=increasing$lon[1], y=increasing$lat[1], pch=21, color=park_palette("JoshuaTree")[2]) + 
+geom_point(x=stable$lon[1], y=stable$lat[1], pch=21, color=park_palette("JoshuaTree")[2]) + 
 
-dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
+scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho~", Pr(flowers) vs. time")) + labs(x="Longitude", y="Latitude") + 
+
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
 
 
-# number of flowering years/decade? -----------------------
+{cairo_pdf("output/figures/flowering_decline_example.pdf", width=4, height=3.5)
+
+ggplot(filter(jotr.hist.flowering, lat == declining$lat[1], lon == declining$lon[1]), aes(x=year, y=prFL, color=prFL>0.24)) + geom_point() + geom_smooth(method="lm", color="#a6611a") +
+
+scale_color_manual(values=c("white", "#80cdc1"), guide="none") + 
+
+labs(x="Year", y="Predicted Pr(flowers)") +
+
+dark_mode(theme_bw())
+
+}
+dev.off()
+
+{cairo_pdf("output/figures/flowering_increase_example.pdf", width=4, height=3.5)
+
+ggplot(filter(jotr.hist.flowering, lat == increasing$lat[1], lon == increasing$lon[1]), aes(x=year, y=prFL, color=prFL>0.24)) + geom_point() + geom_smooth(method="lm", color="#018571") +
+
+scale_color_manual(values=c("white", "#80cdc1"), guide="none") + 
+
+labs(x="Year", y="Predicted Pr(flowers)") +
+
+dark_mode(theme_bw())
+
+}
+dev.off()
+
+{cairo_pdf("output/figures/flowering_stable_example.pdf", width=4, height=3.5)
+
+ggplot(filter(jotr.hist.flowering, lat == stable$lat[1], lon == stable$lon[1]), aes(x=year, y=prFL, color=prFL>0.24)) + geom_point() + geom_smooth(method="lm", color="white") +
+
+scale_color_manual(values=c("white", "#80cdc1"), guide="none") + 
+
+labs(x="Year", y="Predicted Pr(flowers)") +
+
+dark_mode(theme_bw())
+
+}
+dev.off()
+
+#-------------------------------------------------------------------------
+# Flowering years
 
 # best-power prediction thresholds from the original models
-# jotr: 0.26
+# jotr: 0.24
 # YUBR: 0.30
 # YUJA: 0.23
 
-flyrs.jotr <- jotr.hist.flowering %>% group_by(lon,lat) %>% summarize(flyrs=length(which(prFL>=0.26))) # rangewide model
+flyrs.jotr <- jotr.hist.flowering %>% group_by(lon,lat) %>% summarize(flyrs=length(which(prFL>=0.24))) # rangewide model
 range(jotr.hist.flowering$year) # remember: 1900-2022
 glimpse(flyrs.jotr)
 
-{cairo_pdf("output/figures/flowering-years_jotr.pdf", width=3.5, height=3.5)
-ggplot(flyrs.jotr, aes(x=flyrs)) + geom_histogram() + labs(x = "Years with predicted flowering, 1900-2022", y="Cells")
+median(flyrs.jotr$flyrs)
+
+{cairo_pdf("output/figures/flowering-years_jotr.pdf", width=3.5, height=2.5)
+
+ggplot(flyrs.jotr, aes(x=flyrs)) + geom_histogram(fill="#ccece6") + labs(x="Projected flowering years", y="Grid cells") + 
+
+geom_vline(xintercept=median(flyrs.jotr$flyrs), color="#006d2c") +
+
+dark_mode(theme_minimal()) + theme(legend.position="none", plot.background=element_rect(color="black", fill="black"), plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
+
 }
 dev.off()
-
-
-
-ggplot(jotr.hist.flowering, aes(x=prFL)) + geom_histogram() + labs(x = "Modeled pr(FL)", y="Cells")
-
-
-flyrs.yubr <- hist.flowering |> filter(type=="YUBR") |> group_by(lon,lat) |> summarize(flyrs=length(which(prFL>=0.30))) # YUBR
-flyrs.yuja <- hist.flowering |> filter(type=="YUJA") |> group_by(lon,lat) |> summarize(flyrs=length(which(prFL>=0.23))) # YUJA
-
-flyrs.sep <- rbind(data.frame(type="YUBR", flyrs.yubr), data.frame(type="YUJA", flyrs.yuja))
-
-{cairo_pdf("output/figures/flowering-years_YUBR-YUJA.pdf", width=6, height=3.5)
-ggplot(flyrs.sep, aes(x=flyrs)) + geom_histogram() + facet_wrap("type") + labs(x = "Years with predicted flowering, 1900-2022", y="Cells")
-}
-dev.off()
-
-
-ggplot(hist.flowering, aes(x=prFL)) + geom_histogram() + facet_wrap("type") + labs(x = "Modeled pr(flowering)", y="Cells")
-
-# pre decade ----------------------------------------------
-
-flyrs.dec.jotr <- jotr.hist.flowering %>% mutate(decade=paste(floor(year/10)*10,"-9", sep="")) %>% group_by(lon,lat,decade) %>% summarize(flyrs=length(which(prFL>=0.26)))
-
-glimpse(flyrs.dec.jotr)
-
-ggplot(flyrs.dec.jotr, aes(x=decade, y=flyrs)) + geom_boxplot() + labs(x="Decade", y="Predicted flowering years") # hrmmmm
-
-
-flyrs.dec.yubr <- hist.flowering %>% filter(type=="YUBR") %>% mutate(decade=paste(floor(year/10)*10,"-9", sep="")) %>% group_by(lon,lat,decade) %>% summarize(flyrs=length(which(prFL>=0.3))) %>% mutate(type="YUBR")
-
-flyrs.dec.yuja <- hist.flowering %>% filter(type=="YUJA") %>% mutate(decade=paste(floor(year/10)*10,"-9", sep="")) %>% group_by(lon,lat,decade) %>% summarize(flyrs=length(which(prFL>=0.23))) %>% mutate(type="YUJA")
-
-flyrs.dec.sep <- rbind(flyrs.dec.yubr, flyrs.dec.yuja)
-
-glimpse(flyrs.dec.sep)
-
-ggplot(flyrs.dec.sep, aes(x=decade, y=flyrs, fill=type)) + geom_boxplot() + labs(x="Decade", y="Predicted flowering years") # HRMMMMM
-
 
 
 # Plot it on a map
-{cairo_pdf("output/figures/flyrs_map_jotr.pdf", width=5.5, height=6)
+{cairo_pdf("output/figures/flyrs_map_jotr.pdf", width=6, height=5)
 
 ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs)) + geom_tile() + 
 
 #coord_fixed() + 
 
-scale_fill_distiller(type="div", palette=1, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
+scale_fill_distiller(type="seq", palette=2, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
 
-dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
-
-}
-dev.off()
-
-{cairo_pdf("output/figures/flyrs_map_YUBR-YUJA.pdf", width=5.5, height=6)
-
-ggplot(flyrs.sep, aes(x=lon, y=lat, fill=flyrs)) + geom_tile() + 
-
-#coord_fixed() + 
-
-scale_fill_distiller(type="div", palette=1, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
-
-dark_mode(theme_minimal(base_size=12)) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black"))
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
 
 }
 dev.off()
+
 
 
 #-------------------------------------------------------------------------

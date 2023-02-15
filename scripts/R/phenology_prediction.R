@@ -1,9 +1,9 @@
 # Using BARTs to predict historical Joshua tree flowering
-# last used/modified jby, 2022.11.08
+# last used/modified jby, 2023.01.04
 
 # rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
-# setwd("~/Documents/Academic/Active_projects/Jotr_phenology")
+# setwd("~/Documents/Active_projects/Jotr_phenology")
 
 library("tidyverse")
 
@@ -15,14 +15,14 @@ MojExt <- c(-119, -112, 33, 38) # need this later!!
 #-----------------------------------------------------------
 # load the data
 flow <- read.csv("output/flowering_obs_climate_v2_subsp.csv") # flowering/not flowering, gridded and annualized
-flow2 <- flow %>% filter(year!=2019.5) # drop the weird observations
+flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE)) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
 
-glimpse(flow2) # 2,328 observations, 9 candidate predictors
+glimpse(flow2) # 2,600 observations, 9 candidate predictors
 
 yubr <- filter(flow2, type=="YUBR")
-glimpse(yubr) # 1,339 observations for Y brevifolia
+glimpse(yubr) # 1,440 observations for Y brevifolia
 yuja <- filter(flow2, type=="YUJA")
-glimpse(yuja) # 1,096 for Y jaegeriana
+glimpse(yuja) # 1,160 for Y jaegeriana
 
 
 

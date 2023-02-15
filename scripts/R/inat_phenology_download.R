@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2022.11.08
+# jby 2023.01.04
 
 # starting up ------------------------------------------------------------
 
@@ -37,7 +37,7 @@ years <- 2010:2022 # to run everything
 # n.b. for-looping this borks up in a way that makes me suspect it's overloading the API
 for(y in years){
 
-# y <- 2010
+# y <- 2022
 
 bud.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, term_value_id=15, year=y, maxresults=1e4))
 Sys.sleep(5) # throttling under the API limit, maybe?
@@ -98,6 +98,52 @@ cis_in_spp <- st_join(st_as_sf(cis, coords=c("lon", "lat"), crs=crs(jtssps)), jt
 glimpse(cis_in_spp)
 
 write.table(cis_in_spp, "data/CIS_obs_by_spp.csv", col.names=TRUE, row.names=FALSE, sep=",")
+
+# rasterize!
+
+valid <- read.csv("data/Validation_obs_by_spp.csv")
+glimpse(valid)
+
+valid.rst <- data.frame(matrix(0,0,4))
+names(valid.rst) <- c("lon","lat","year","flr")
+
+prism_temp_rast <- raster("data/PRISM/annual/ppt_Mojave_2010Q1.bil")
+
+# then ...
+for(yr in 1:length(unique(valid$year))){
+
+if(nrow(dplyr::filter(valid, year==unique(valid$year)[yr], ((obs_by=="CIS" & (obs_flowers|obs_fruit)) | (obs_by=="Ray Yeager" & obs_flowers)) ))> 0){
+yes <- 2*(rasterize(dplyr::filter(valid, year==unique(valid$year)[yr], ((obs_by=="CIS" & (obs_flowers|obs_fruit)) | (obs_by=="Ray Yeager" & obs_flowers)) )[,c("lon","lat")], prism_temp_rast, fun=sum, background=0) > 0)
+
+yearyes <- rasterToPoints(yes+no, fun=function(x){x>1})
+}else{
+yearyes <- NULL
+}
+
+
+if(nrow(dplyr::filter(valid, year==unique(valid$year)[yr], !((obs_by=="CIS" & (obs_flowers|obs_fruit)) | (obs_by=="Ray Yeager" & obs_flowers)) ))> 0){
+no <- rasterize(dplyr::filter(valid, year==unique(valid$year)[yr], !((obs_by=="CIS" & (obs_flowers|obs_fruit)) | (obs_by=="Ray Yeager" & obs_flowers)) )[,c("lon","lat")], prism_temp_rast, fun=sum, background=0) > 0
+
+yearno <- rasterToPoints(yes+no, fun=function(x){x==1})
+
+}else{
+yearno <- NULL
+}
+
+valid.rst <- rbind(valid.rst, data.frame(lon=c(yearyes[,"x"],yearno[,"x"]), lat=c(yearyes[,"y"],yearno[,"y"]), year=unique(valid$year)[yr], flr=rep(c(TRUE,FALSE),c(nrow(yearyes),nrow(yearno)))))# need to solve this yet
+
+}
+
+valid.rst.ssp <- st_join(st_as_sf(valid.rst, coords=c("lon", "lat"), crs=crs(jtssps)), jtssps, join = st_within) %>% cbind(valid.rst[,c("lon", "lat")]) %>% as.data.frame(.) %>% dplyr::select(-geometry, -Description) %>% rename(type=Name) %>% dplyr::select(lon, lat, type, year, flr)
+
+glimpse(valid.rst.ssp) # okay okay okay!
+table(valid.rst.ssp$type, useNA="ifany")
+table(valid.rst.ssp$year, valid.rst.ssp$flr) # think that looks good ...
+
+
+glimpse(valid.rst) # okay, let's see how we feel about this
+
+
 
 
 #-------------------------------------------------------------------------

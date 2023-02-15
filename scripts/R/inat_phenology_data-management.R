@@ -1,6 +1,6 @@
 # working with phenology-annotated iNat observations
 # Assumes MAJEL environment 
-# jby 2022.11.08
+# jby 2023.01.04
 
 # starting up ------------------------------------------------------------
 
@@ -21,7 +21,7 @@ MojExt <- extent(-119, -112, 33, 38)
 
 inat <- read.csv("data/inat_phenology_data_subsp.csv", h=TRUE) %>% mutate(observed_on = ymd(observed_on))
 
-glimpse(inat) # 11,082 raw observations
+glimpse(inat) # 10,159 raw observations
 table(inat$phenology)
 table(inat$phenology, inat$year)
 
@@ -114,6 +114,8 @@ write.table(flr.clim, "output/flowering_obs_climate_v2_subsp.csv", sep=",", col.
 
 } # END LOOP over years
 
+glimpse(flr.clim)
+table(flr.clim$type, useNA="ifany")
 
 # and that's generated a data file we can feed into Embarcadero ... in the next script!
 

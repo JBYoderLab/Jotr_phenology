@@ -87,3 +87,6 @@ rsconnect/
 .DS_Store
 .DS_Store
 .DS_Store
+*.history
+.gitignore (1)
+.DS_Store

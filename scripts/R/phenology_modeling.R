@@ -1,6 +1,6 @@
 # Using BARTs to model Joshua tree flowering
 # best run on MAJEL
-# last used/modified jby, 2022.12.14
+# last used/modified jby, 2023.01.04
 
 rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -25,23 +25,38 @@ flow <- read.csv("output/flowering_obs_climate_v2_subsp.csv") # flowering/not fl
 dim(flow)
 glimpse(flow)
 
-ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") + theme_bw()
-
 
 # variant datasets -- dealing with the second flowering in 2019
 flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE)) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
 flow3 <- flow
 flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
 
-glimpse(flow2) # 2,503 in our final working set
+glimpse(flow2) # 2,600 in our final working set
+
+ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") + theme_bw()
 
 # split by subspecies
 # swap input datasets to change --- current most trustworthy is flow2, ignoring 2019.5
 yuja <- filter(flow2, type=="YUJA") 
 yubr <- filter(flow2, type=="YUBR")
 
-glimpse(yuja) # 1,096 obs (after iffy ones excluded)
-glimpse(yubr) # 1,339 obs
+glimpse(yuja) # 1,160 obs (after iffy ones excluded)
+glimpse(yubr) # 1,440 obs
+
+#-------------------------------------------------------------------------
+# predictor exploration
+
+xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1") # year + weather data, "curated"
+
+flow2.ln <- flow2 %>% pivot_longer(cols=all_of(xnames), values_to="value", names_to="variable")
+glimpse(flow2.ln)
+
+{cairo_pdf("output/figures/predictor_differences.pdf", width=11, height=4)
+
+ggplot(flow2.ln, aes(x=value, y=1+flr)) + geom_jitter(alpha=0.05, height=0.125) + geom_boxplot(alpha=0.1, aes(group=flr)) + geom_smooth(method="gam") + facet_wrap("variable", scale="free_x", nrow=2) + scale_y_continuous(breaks=1:2, labels=c("False", "True")) + labs(x="Variable value", y="Flowers observed?") + theme_bw()
+
+}
+dev.off()
 
 #-------------------------------------------------------------------------
 # fit candidate BART models, stepwise
@@ -51,119 +66,11 @@ xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0
 
 # Full range ------------------------------------
 
-# PCA to describe predictor variation ------
-
-jotrPCA <- prcomp(flow2[,xnames], scale.=TRUE)
-summary(jotrPCA)
-
-# what do we get from this ...?
-expc <- function(pca, ax){
-
-	ord = order(abs(pca$rotation[,ax]),decreasing=TRUE)
-
-	return(list(prop.var=round(100*summary(pca)$importance[2,ax]), rots=data.frame(Var=rownames(pca$rotation)[ord], Rot=pca$rotation[ord,ax])))
-}
-	
-expc(jotrPCA, 1) # 42% of variance; higher values => lower pptY0
-expc(jotrPCA, 2) # 24% of variance; higher values => greater vpdmaxW0vW1 (vpdmaxW0 > vpdmaxW1)
-expc(jotrPCA, 3) # 14% of variance; higher values => lower tminW0vW1 (tminW0 < tminW1)
-expc(jotrPCA, 4) # 9% of variance; higher values => greater tminW0
-
-flow2PCA <- cbind(flow2,jotrPCA$x[,1:4])
-
-ggplot(flow2PCA, aes(x=-PC1, y=PC2, color=flr)) + geom_point(alpha=0.5) + theme_bw()
-ggplot(flow2PCA, aes(x=PC2, y=PC3, color=flr)) + geom_point(alpha=0.5) + theme_bw()
-ggplot(flow2PCA, aes(x=PC3, y=-PC1, color=flr)) + geom_point(alpha=0.5) + theme_bw()
-ggplot(flow2PCA, aes(x=-PC1, y=PC4, color=flr)) + geom_point(alpha=0.5) + theme_bw()
-
-
-
-jotrPCAvarimp <- varimp.diag(y.data=as.numeric(flow2PCA$flr), x.data=flow2PCA[,c("PC1","PC2","PC3","PC4")], ri.data=flow2PCA$year)
-
-
 # variable importance across the whole predictor set
+jotr.varimp <- varimp.diag(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames], ri.data=flow2[,"year"])
 
-# doing replicate subsamples to cope with unbalanced data ...
-# BY YEAR ...
-table(flow2$year, flow2$flr) # so that's fun; the imbalance is not consistent
-flow2ssNs <- apply(table(flow2$year, flow2$flr), 1, min) # what's the smaller sample size in each year
+save(jotr.varimp, file="output/BART/bart.ri.varimp.Jotr.Rdata")
 
-nreps <- 10 # start small
-
-flow2subs <- vector("list", nreps)
-
-# okay let's try this ...
-for(ss in 1:nreps){ # loop over subsample replicates
-
-subsam <- NULL
-
-	for(yr in unique(flow2$year)){ # loop over years to balance that way ...
-	
-	subN <- min(table(flow2[flow2$year==yr,]$flr))
-	subsam <- flow2 %>% filter(year==yr) %>% group_by(flr) %>% slice_sample(n=subN) %>% rbind(subsam, .)
-	
-	}
-
-flow2subs[[ss]] <- subsam
-
-}
-
-class(flow2subs)
-head(flow2subs[[1]])
-
-save(flow2subs, file="output/BART/jotr.flowering.obs_subsamples-by-year.Rdata") # save this for replicability and eventually model-fitting ...
-
-
-jotr.varimps <- lapply(flow2subs, function(ss) varimp.diag(y.data=as.numeric(ss$flr), x.data=ss[,xnames], ri.data=ss$year)) # fingers crossed
-
-{cairo_pdf(file = "output/figures/jotr.subsamp-by-year.varimps.pdf", width=6, height=4, onefile=TRUE)
-
-jotr.varimps
-
-}
-dev.off() # OKAY this worked as intended
-
-# ACROSS YEARS ...
-min(table(flow2$flr)) # what's the smaller sample size ah right flowering
-
-nreps <- 10 # start small
-
-flow2subs <- vector("list", nreps)
-
-# okay let's try this ...
-for(ss in 1:nreps){ # loop over subsample replicates
-
-flow2subs[[ss]] <- flow2 %>% group_by(flr) %>% slice_sample(n=min(table(flow2$flr)))
-
-}
-
-class(flow2subs)
-head(flow2subs[[1]])
-
-save(flow2subs, file="output/BART/jotr.flowering.obs_subsamples-across-years.Rdata") # save this for replicability and eventually model-fitting ...
-
-
-jotr.varimps <- lapply(flow2subs, function(ss) varimp.diag(y.data=as.numeric(ss$flr), x.data=ss[,xnames], ri.data=ss$year)) # fingers crossed
-
-{cairo_pdf(file = "output/figures/jotr.subsamp-across-year.varimps.pdf", width=6, height=4, onefile=TRUE)
-
-jotr.varimps
-
-}
-dev.off() # OKAY this worked as intended
-
-
-# stepwise model fitting
-jotr.flr.mod.step <- bart.step(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames], ri.data=flow2[,"year"], full=FALSE, quiet=TRUE) 
-save(jotr.flr.mod.step, file="output/BART/bart.step.models.jotr.Rdata")
-
-# load(file="output/BART/bart.step.models.jotr.Rdata")
-
-summary(jotr.flr.mod.step)
-
-varimp(jotr.flr.mod.step, plots=TRUE)
-partial(jotr.flr.mod.step) # this needs debugging, per CJC
-plot(jotr.flr.mod.step) #??
 
 # refitting with vars indicated by varimp:
 jotr.preds <- c("tmaxW0vW1", "pptY0", "tmaxW0", "tminW0")
@@ -178,7 +85,6 @@ jotr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' 
 	keepTrees = TRUE)
 
 summary(jotr.mod)
-varimp(jotr.mod)
 
 save(jotr.mod, file="output/BART/bart.ri.model.Jotr.Rdata")
 
@@ -189,23 +95,8 @@ summary(jotr.mod)
 
 # YUBR --------------------------------
 
-# variable importance across the whole predictor set
-yubr.varimp <- varimp.diag(y.data=as.numeric(yubr[,"flr"]), x.data=yubr[,xnames], ri.data=yubr[,"year"])
-
-# variable selection
-yubr.flr.mod.step <- bart.step(y.data=as.numeric(yubr[,"flr"]), x.data=yubr[,xnames], ri.data=yubr[,"year"], full=FALSE, quiet=TRUE) 
-save(yubr.flr.mod.step, file="output/BART/bart.step.models.YUBR.Rdata")
-
-# load(file="output/BART/bart.step.models.YUBR.Rdata")
-
-summary(yubr.flr.mod.step)
-
-varimp(yubr.flr.mod.step, plots=TRUE)
-partial(yubr.flr.mod.step) # this needs debugging, per CJC
-plot(yubr.flr.mod.step) #??
-
-# refitting with vars indicated by varimp:
-yubr.preds <- c("pptY0", "tminW0", "tmaxW0vW1", "tminW0vW1")
+# fitting with vars indicated by varimp on global data:
+yubr.preds <- jotr.preds
 
 yubr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(yubr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
 	data = yubr,
@@ -224,22 +115,22 @@ save(yubr.mod, file="output/BART/bart.ri.model.YUBR.Rdata")
 
 # YUJA --------------------------------
 
-# variable importance across the whole predictor set
-yuja.varimp <- varimp.diag(y.data=as.numeric(yuja[,"flr"]), x.data=yuja[,xnames], ri.data=yuja[,"year"])
-
-# variable selection
-yuja.flr.mod.step <- bart.step(y.data=as.numeric(yuja[,"flr"]), x.data=yuja[,xnames], ri.data=yuja[,"year"], full=FALSE, quiet=TRUE) 
-save(yuja.flr.mod.step, file="output/BART/bart.step.models.YUJA.Rdata")
-
-# load(file="output/BART/bart.step.models.YUJA.Rdata")
-
-summary(yuja.flr.mod.step)
-
-varimp(yuja.flr.mod.step)
-
 # refitting with vars indicated by varimp:
-yuja.preds <- c("vpdmaxW0vW1", "tmaxW0", "vpdmaxW0", "pptW0", "pptW0W1")
+yuja.preds <- jotr.preds
 
+yuja.mod <- rbart_vi(as.formula(paste(paste('flr', paste(yuja.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
+	data = yuja,
+	group.by = yuja[,'year'],
+	n.chains = 1,
+	k = 2,
+	power = 2,
+	base = 0.95,
+	keepTrees = TRUE)
+
+summary(yuja.mod)
+varimp(yuja.mod)
+
+save(yuja.mod, file="output/BART/bart.ri.model.YUJA.Rdata")
 
 #------------------------------------------------
 # AND ALSO

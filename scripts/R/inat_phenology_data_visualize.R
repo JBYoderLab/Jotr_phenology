@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2022.11.08
+# jby 2023.01.04
 
 # starting up ------------------------------------------------------------
 
@@ -10,6 +10,7 @@
 library("tidyverse")
 library("sf")
 library("raster")
+library("ggspatial")
 
 source("../shared/Rscripts/base_graphics.R")
 
@@ -21,20 +22,21 @@ flow <- read.csv("output/flowering_obs_climate_v2_subsp.csv") # flowering/not fl
 dim(flow)
 glimpse(flow)
 
+
 # variant datasets -- dealing with the second flowering in 2019
-flow2 <- flow %>% filter(year!=2019.5) # drop the weird observations
+flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE)) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
 flow3 <- flow
 flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
 
-glimpse(flow2)
+glimpse(flow2) # 2,600 in our final working set
 
 # split by subspecies
 # swap input datasets to change --- current most trustworthy is flow2, ignoring 2019.5
 yuja <- filter(flow2, type=="YUJA") 
 yubr <- filter(flow2, type=="YUBR")
 
-glimpse(yuja) # 1,096 obs (after iffy ones excluded)
-glimpse(yubr) # 1,339 obs
+glimpse(yuja) # 1,124 obs (after iffy ones excluded)
+glimpse(yubr) # 1,381 obs
 
 
 #-------------------------------------------------------------------------
@@ -183,21 +185,54 @@ geom_sf(data=sdm, fill=park_palette("JoshuaTree")[5], alpha=0.5, color=NA) +
 
 #geom_sf(data=parks, color=park_palette("JoshuaTree")[6], fill=NA, size=0.25) +
 
-geom_point(data=flow2, aes(x=lon, y=lat, shape=flr, color=flr), alpha=0.75) +
+geom_point(data=flow2, aes(x=lon, y=lat, shape=flr, color=flr, size=flr), alpha=0.75) +
 
-scale_shape_manual(values=c(20,21), guide="none") +
-scale_color_manual(values=park_palette("JoshuaTree")[c(2,1)], guide="none") +
+scale_shape_manual(values=c(21,20), guide="none") +
+scale_size_manual(values=c(1.2,1), guide="none") +
+scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], guide="none") + # nb these are false, true
 
 annotation_scale(location = "br", width_hint = 0.3) + 
-annotation_north_arrow(location = "br", which_north = "true", pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"), style = north_arrow_fancy_orienteering) +
+annotation_north_arrow(location = "br", which_north = "true", pad_x = unit(0.3, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering) +
 
 coord_sf(xlim = c(-119, -112.75), ylim = c(33.25, 38), expand = FALSE) +
 
 labs(x="Longitude", y="Latitude") +
 
-theme_bw() + theme(panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5), panel.background = element_rect(fill = "slategray3"))
+dark_mode(theme_bw()) + theme(panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5), panel.background = element_rect(fill = "slategray3"), plot.background = element_rect(color="black"))
 
 }
 dev.off()
 
+# background map
+{cairo_pdf(paste("output/figures/map_jotr_range.pdf", sep=""), width=6.5, height=6)
+
+ggplot() + 
+
+geom_sf(data=coast, color="slategray2", size=2.5) + 
+geom_sf(data=states, fill="antiquewhite1", color=NA) + 
+geom_text(data=statelabs, aes(label=state, x=lon, y=lat), color="white", size=12, alpha=0.75) +
+geom_sf(data=urban, fill="antiquewhite2", color=NA) + 
+geom_sf(data=states, fill=NA, color="antiquewhite4") + 
+geom_sf(data=parks, color=NA, fill=park_palette("JoshuaTree")[6], alpha=0.25) +
+
+geom_sf(data=rivers, color="slategray3", size=0.4) +
+geom_sf(data=lakes, fill="slategray3", color=NA) + 
+
+geom_sf(data=sdm, fill=park_palette("JoshuaTree")[5], alpha=0.5, color=NA) +
+#geom_sf(data=cole, fill=NA, color=park_palette("JoshuaTree")[5]) +
+
+geom_sf(data=parks, color=park_palette("JoshuaTree")[6], fill=NA, size=0.25) +
+
+
+annotation_scale(location = "br", width_hint = 0.3) + 
+annotation_north_arrow(location = "br", which_north = "true", pad_x = unit(0.3, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering) +
+
+coord_sf(xlim = c(-119, -112.75), ylim = c(33.25, 38), expand = FALSE) +
+
+labs(x="Longitude", y="Latitude") +
+
+dark_mode(theme_bw()) + theme(panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5), panel.background = element_rect(fill = "slategray3"), plot.background = element_rect(color="black"))
+
+}
+dev.off()
 
