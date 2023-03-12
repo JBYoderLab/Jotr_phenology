@@ -1,6 +1,6 @@
 # Analyzing predicted historical flowering in Joshua tree
 # Assumes local environment
-# jby 2023.01.04
+# jby 2023.03.02
 
 # starting up ------------------------------------------------------------
 
@@ -35,6 +35,8 @@ obs <- read.csv("output/flowering_obs_climate_v2_subsp.csv") %>% mutate(y2 = yea
 
 # raster files of predicted prFL
 jotr.files <- list.files("output/BART/predictions", pattern=".bil", full=TRUE)
+jotr.ri.files <- list.files("output/BART/RI.predictions", pattern=".bil", full=TRUE)
+
 yubr.files <- list.files("output/BART/predictions.YUBR", pattern=".bil", full=TRUE)
 yuja.files <- list.files("output/BART/predictions.YUJA", pattern=".bil", full=TRUE)
 
@@ -44,7 +46,7 @@ MojExt <- extent(-119, -112, 33, 38) # Mojave extent, maybe useful
 vobs <- read.csv("data/Validation_obs_by_spp.csv")
 
 
-# Jotr --------------------------------
+# Jotr, without RI --------------------------------
 jotr.histStack <- raster::stack(sapply(jotr.files, function(x) crop(raster::raster(x), MojExt)))
 names(jotr.histStack) <- paste("prFL",1900:2022,sep=".")
 projection(jotr.histStack)<-CRS("+init=epsg:4269")
@@ -57,8 +59,40 @@ jotr.hist.flowering <- cbind(coordinates(jotr.maskHist), as.data.frame(jotr.mask
 
 glimpse(jotr.hist.flowering)
 
-write.table(jotr.hist.flowering, "output/historic_flowering_reconst_jotr.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+# Jotr, with RI ------------------------------------
+jotr.ri.histStack <- raster::stack(sapply(jotr.ri.files, function(x) crop(raster::raster(x), MojExt)))
+names(jotr.ri.histStack) <- paste("prFL",1900:2022,sep=".")
+projection(jotr.ri.histStack)<-CRS("+init=epsg:4269")
 
+jotr.ri.histStack
+
+jotr.ri.maskHist <- mask(jotr.ri.histStack, st_transform(sdm.pres[,2], crs=4269))
+
+jotr.ri.hist.flowering <- cbind(coordinates(jotr.ri.maskHist), as.data.frame(jotr.ri.maskHist)) %>% filter(!is.na(prFL.2009)) %>% rename(lon=x, lat=y) %>% pivot_longer(starts_with("prFL"), names_to="year", values_to="RI.prFL") %>% mutate(year=as.numeric(gsub("prFL\\.(\\d+)", "\\1", year)))
+
+glimpse(jotr.ri.hist.flowering)
+
+jotr.flowering.histories <- jotr.hist.flowering |> left_join(jotr.ri.hist.flowering)
+
+glimpse(jotr.flowering.histories)
+
+
+write.table(jotr.flowering.histories, "output/historic_flowering_reconst_jotr.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+
+jotr.hist.flowering <- read.csv("output/historic_flowering_reconst_jotr.csv")
+
+# comparing predictions with and without RI
+
+table(jotr.flowering.histories$prFL>0.22, jotr.flowering.histories$RI.prFL>0.23) # hmmmm!
+chisq.test(table(jotr.flowering.histories$prFL>0.22, jotr.flowering.histories$RI.prFL>0.23)) # p < 2.2e-16, natch
+
+RIvNon <- jotr.flowering.histories |> group_by(year) |> do(broom::tidy(cor.test(~prFL+RI.prFL, data=., method="spearman"))) %>% ungroup()
+
+glimpse(RIvNon)
+RIvNon |> filter(p.value < 0.01, estimate < 0) # okay!
+RIvNon |> filter(p.value < 0.01, estimate > 0) # whew! probabilities positively correlated in *all* years
+
+ggplot(RIvNon, aes(x=estimate)) + geom_histogram() # and yeah the skew is in the direction we want
 
 
 # YUBR --------------------------------
@@ -102,7 +136,9 @@ write.table(hist.flowering, "output/historic_flowering_reconst_YUBR-YUJA.csv", s
 # Validation observations
 
 # best-power prediction thresholds from the original models
-# jotr: 0.24
+# jotr: 0.22
+# jotr RI: 0.23
+
 # YUBR: 0.30
 # YUJA: 0.23
 
@@ -117,7 +153,11 @@ for(yr in unique(vobs$year)){
 vsub <- filter(vobs, year==yr)
 
 vsub$jotr_prFlr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.24
+vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.22
+
+vsub$jotr_RI.prFlr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+vsub$jotr_RI.Flr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.23
+
 
 #vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
 #vsub$YUBR_Flr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.30
@@ -134,30 +174,38 @@ head(valid) # cool
 write.table(valid, "output/expert_obs_validations.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
 
-# species-specific models/validation
+# RANGE-WIDE -------------
 
+# without RI
 table(valid$obs_flowers, valid$jotr_Flr) # eesh
 chisq.test(table(valid$obs_flowers, valid$jotr_Flr)) # LOLsob
 
-t.test(jotr_prFlr~obs_flowers, data=valid) # n.s., dammit
+t.test(jotr_prFlr~obs_flowers, data=valid) # p = 0.09 hmmm
 
+# jotr, with RI
+table(valid$obs_flowers, valid$jotr_RI.Flr) # eesh
+chisq.test(table(valid$obs_flowers, valid$jotr_RI.Flr)) # n.s.
+
+t.test(jotr_RI.prFlr~obs_flowers, data=valid) # n.s., dammit
+
+# BY SPECIES -------------
 vYUBR <- filter(valid, type=="YUBR")
 vYUJA <- filter(valid, type=="YUJA")
 
-t.test(jotr_prFlr~obs_flowers, data=vYUBR) # p = 0.001 HEY
+# without RI
+t.test(jotr_prFlr~obs_flowers, data=vYUBR) # p = 0.0001 HEY
 t.test(jotr_prFlr~obs_flowers, data=vYUJA) # n.s.
-chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_Flr)) # p = 0.015
-chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_Flr)) # n.s.
+chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_Flr)) # p = 0.018 (confirmed correct way)
+chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_Flr)) # p = 0.017 (WORSE than random wow)
 
-table(c(vYUBR$obs_flowers,vYUJA$obs_flowers), c(vYUBR$YUBR_Flr, vYUJA$YUJA_Flr)) # eesh
-chisq.test(table(c(vYUBR$obs_flowers,vYUJA$obs_flowers), c(vYUBR$YUBR_Flr, vYUJA$YUJA_Flr))) # LOLsob
+# with RI
+t.test(jotr_RI.prFlr~obs_flowers, data=vYUBR) # p = 0.01 OKAY
+t.test(jotr_RI.prFlr~obs_flowers, data=vYUJA) # n.s.
+chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_RI.Flr)) # p = 0.048 (confirmed correct way)
+chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_RI.Flr)) # n.s. whee
 
-# just RY observations of YUBR
 
-t.test(YUBR_prFlr~obs_flowers, data=filter(vYUBR, obs_by=="Ray Yeager"))
-t.test(YUBR_prFlr~obs_flowers, data=filter(vYUBR, obs_by=="CIS")) # p = 0.007053
 
-chisq.test(table(filter(vYUBR, obs_by=="CIS")$obs_flowers, filter(vYUBR, obs_by=="CIS")$YUBR_Flr)) # HMM
 
 
 #-------------------------------------------------------------------------
@@ -317,6 +365,7 @@ dev.off()
 
 # cor(flr, yr) --- crude but it's a start -----------------
 
+# not sure this is the best approach?
 cellcors <- jotr.hist.flowering %>% group_by(lon,lat) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) %>% ungroup() # rangewide model
 
 glimpse(cellcors)
@@ -422,15 +471,42 @@ dev.off()
 # Flowering years
 
 # best-power prediction thresholds from the original models
-# jotr: 0.24
+# jotr: 0.22
+# jotr with RI: 0.23
 # YUBR: 0.30
 # YUJA: 0.23
 
-flyrs.jotr <- jotr.hist.flowering %>% group_by(lon,lat) %>% summarize(flyrs=length(which(prFL>=0.24))) # rangewide model
+flyrs.jotr <- jotr.flowering.histories %>% group_by(lon,lat) %>% 
+summarize(
+	flyrs_all=length(which(prFL>=0.22)), 
+	flyrs_1900_1929=length(which(prFL>=0.22 & year<=1929)), 
+	flyrs_1990_2019=length(which(prFL>=0.22 & year>=1990 & year<=2019)),
+	flyrs_RI_all=length(which(RI.prFL>=0.23)), 
+	flyrs_RI_1900_1929=length(which(RI.prFL>=0.23 & year<=1929)), 
+	flyrs_RI_1990_2019=length(which(RI.prFL>=0.23 & year>=1990 & year<=2019)),	
+	) # rangewide model
 range(jotr.hist.flowering$year) # remember: 1900-2022
 glimpse(flyrs.jotr)
 
-median(flyrs.jotr$flyrs)
+# without RI
+quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))
+quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))/123
+
+quantile(flyrs.jotr$flyrs_1900_1929, c(0.025,0.5,0.975))/30 # hmmm
+quantile(flyrs.jotr$flyrs_1990_2019, c(0.025,0.5,0.975))/30
+
+# with RI
+quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))
+quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))/123
+
+quantile(flyrs.jotr$flyrs_RI_1900_1929, c(0.025,0.5,0.975))/30 # hmmm
+quantile(flyrs.jotr$flyrs_RI_1990_2019, c(0.025,0.5,0.975))/30
+
+
+
+ggplot(flyrs.jotr, aes(x=flyrs_1900_1929)) + geom_histogram(bins=30)
+ggplot(flyrs.jotr, aes(x=flyrs_1990_2019)) + geom_histogram(bins=30)
+
 
 {cairo_pdf("output/figures/flowering-years_jotr.pdf", width=3.5, height=2.5)
 
@@ -447,7 +523,7 @@ dev.off()
 # Plot it on a map
 {cairo_pdf("output/figures/flyrs_map_jotr.pdf", width=6, height=5)
 
-ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs)) + geom_tile() + 
+ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs_all)) + geom_tile() + 
 
 #coord_fixed() + 
 
@@ -458,6 +534,18 @@ dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=un
 }
 dev.off()
 
+{cairo_pdf("output/figures/RI_flyrs_map_jotr.pdf", width=6, height=5)
+
+ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs_RI_all)) + geom_tile() + 
+
+#coord_fixed() + 
+
+scale_fill_distiller(type="seq", palette=2, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
+
+dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+
+}
+dev.off()
 
 
 #-------------------------------------------------------------------------
@@ -499,4 +587,27 @@ labs(x="Year", y="Probability of flowering") + dark_mode(theme_ipsum()) + theme(
 dev.off()
 
 
+#-------------------------------------------------------------------------
+# temperature trends at selected sites
 
+examples <- read.csv("data/Yoder_etal_sites.txt", sep="\t")
+
+tmaxfiles <- list.files("data/PRISM/annual", pattern="tmax_Mojave_\\d+Q3.bil", full=TRUE)
+
+tmaxStack <- raster::stack(sapply(tmaxfiles[-c(127,128)], function(x) crop(raster::raster(x), MojExt)))
+names(tmaxStack) <- 1895:2020
+projection(tmaxStack)<-CRS("+init=epsg:4269")
+
+tmaxseries <- data.frame(examples[,c("Population", "lat_dec", "lon_dec")], raster::extract(tmaxStack, examples[,c("lon_dec","lat_dec")])) |> pivot_longer(cols=starts_with("X"), names_to="year", values_to="tmax.Q3") |> mutate(year=as.numeric(gsub("X(\\d+)", "\\1", year)))
+
+tmaxseries
+
+tmaxMeans <- tmaxseries |> group_by(year) |> summarize(meanTmaxQ3 = mean(tmax.Q3))
+
+ggplot(tmaxMeans, aes(x=year, y=meanTmaxQ3)) + geom_point() + geom_smooth()
+
+# mean summer max temp, 1900-1929
+tmaxMeans |> filter(year%in%1900:1929) |> summarize(mean(meanTmaxQ3))
+
+# mean summer max temp, 1990-2019
+tmaxMeans |> filter(year%in%1990:2019) |> summarize(mean(meanTmaxQ3))

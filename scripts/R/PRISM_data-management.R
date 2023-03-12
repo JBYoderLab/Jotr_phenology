@@ -204,9 +204,9 @@ if(!dir.exists("data/PRISM/derived_predictors")) dir.create("data/PRISM/derived_
 
 # FOR LOOP over the historical data ...
 # nb, because retrospective, can't do all the way back to 1895
-for(yr in 2019:2022){
+for(yr in 1900:2022){
 
-# yr <- 2020
+# yr <- 1900
 
 pptW0 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q4.bil", sep="")), raster)),sum)
 pptY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q",4:2,".bil", sep="")), raster)),sum)

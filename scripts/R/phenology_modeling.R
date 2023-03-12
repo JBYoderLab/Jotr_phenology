@@ -1,6 +1,6 @@
 # Using BARTs to model Joshua tree flowering
 # best run on MAJEL
-# last used/modified jby, 2023.01.04
+# last used/modified jby, 2023.03.11
 
 rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -11,6 +11,7 @@ rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn
 library("tidyverse")
 library("embarcadero")
 library("ggdark")
+library("raster")
 
 source("../shared/Rscripts/base_graphics.R")
 
@@ -27,11 +28,11 @@ glimpse(flow)
 
 
 # variant datasets -- dealing with the second flowering in 2019
-flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE)) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
-flow3 <- flow
+flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
+flow3 <- flow |> filter(year>=2008)
 flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
 
-glimpse(flow2) # 2,600 in our final working set
+glimpse(flow2) # 3,016 in our final working set
 
 ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") + theme_bw()
 
@@ -40,7 +41,7 @@ ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") 
 yuja <- filter(flow2, type=="YUJA") 
 yubr <- filter(flow2, type=="YUBR")
 
-glimpse(yuja) # 1,160 obs (after iffy ones excluded)
+glimpse(yuja) # 1,309 obs (after iffy ones excluded)
 glimpse(yubr) # 1,440 obs
 
 #-------------------------------------------------------------------------
@@ -62,20 +63,97 @@ dev.off()
 # fit candidate BART models, stepwise
 
 # predictors
-xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1") # year + weather data, "curated"
+xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1") # weather data, "curated"
 
 # Full range ------------------------------------
 
 # variable importance across the whole predictor set
-jotr.varimp <- varimp.diag(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames], ri.data=flow2[,"year"])
+jotr.varimp <- varimp.diag(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames]) # now sans RI
+# favors vpdmaxW0vW1, tmaxW0vW1, pptY0, vpdminW0vW1, and pptW0 
 
-save(jotr.varimp, file="output/BART/bart.ri.varimp.Jotr.Rdata")
+write_rds(jotr.varimp, file="output/BART/bart.varimp.Jotr.rds") # switching save modes now
+# jotr.varimp <- read_rds("output/BART/bart.varimp.Jotr.rds")
 
+# and, sure, let's do stepwise fitting too
+jotr.mod.step <- bart.step(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames], full=FALSE, quiet=TRUE)
+# favors pptY0 pptW0W1 tmaxW0 tmaxW0vW1 vpdmaxW0vW1
 
 # refitting with vars indicated by varimp:
-jotr.preds <- c("tmaxW0vW1", "pptY0", "tmaxW0", "tminW0")
+jotr.preds <- c("vpdmaxW0vW1", "tmaxW0vW1", "pptY0", "vpdminW0vW1", "pptW0")
 
-jotr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
+jotr.mod <- bart(y.train=as.numeric(flow2[,"flr"]), x.train=flow2[,jotr.preds], keeptrees=TRUE)
+
+summary(jotr.mod)
+
+invisible(jotr.mod$fit$state)
+write_rds(jotr.mod, file="output/BART/bart.model.Jotr.rds")
+# jotr.mod <- read_rds("output/BART/bart.model.Jotr.rds")
+
+p <- partial(jotr.mod, jotr.preds, trace=FALSE) # visualize partials
+varimp(jotr.mod)
+
+pd2_36 <- pd2bart(y.train=as.numeric(flow2[,"flr"]), x.train=flow2[,jotr.preds], xind=c(3,6))  # frowning
+
+
+# now, spartials ...
+
+for(yr in unique(flow2$year)){
+
+# yr <- 2022
+
+{cairo_pdf(paste("output/figures/BART_spartials_jotr_", yr, ".pdf", sep=""), width=9, height=6.5)
+plot(spartial(jotr.mod, brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_", yr, ".grd", sep="")), x.vars=jotr.preds))
+}
+dev.off()
+
+}
+
+
+#-------------------------------------------------------------------------
+# LOO by year, for more confirmation
+
+table(flow2$year) # do we have enough for all years? Yeah sure
+
+LOOvalid <- data.frame(matrix(0,0,4))
+colnames(LOOvalid) <- c("year", "N_flr", "N_noflr", "AUC")
+
+# LOOP over years
+for(yr in unique(flow2$year)){
+
+# yr <- 2010
+
+inbag <- flow2 |> filter(year!=yr)
+oobag <- flow2 |> filter(year==yr)
+
+testmod <- bart(y.train=as.numeric(flow2[,"flr"]), x.train=flow2[,jotr.preds], keeptrees=TRUE)
+
+# data for OOB year
+OOBpreds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
+
+# prediction at OOB sites with the RI predictor (year) removed
+testpred.ri0 <- predict(testmod, OOBpreds[[attr(testmod$fit$data@x, "term.labels")]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
+
+OOBpreds <- raster::extract(testpred.ri0, oobag[,c("lon", "lat")]) # predicted OOB sites with model
+
+# hacked out of the summary function for rbarts
+auc <- performance(prediction(OOBpreds, oobag$flr),"auc")@y.values[[1]]
+
+LOOvalid <- rbind(LOOvalid, data.frame(year=yr, N_flr=length(which(oobag$flr)), N_noflr=length(which(!oobag$flr)), AUC=auc))
+
+} # END loop over years
+
+LOOvalid <- LOOvalid |> arrange(year) # eeeeeh
+
+write.table(LOOvalid, "output/BART/year-year-LOO.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+mean(LOOvalid$AUC) # 0.67
+sd(LOOvalid$AUC) # 0.10
+sd(LOOvalid$AUC)/sqrt(nrow(LOOvalid)) # SE = 0.03
+
+
+#-------------------------------------------------------------------------
+# finally, now fit RI model
+jotr.RImod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
 	data = flow2,
 	group.by = flow2[,'year'],
 	n.chains = 1,
@@ -84,117 +162,17 @@ jotr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' 
 	base = 0.95,
 	keepTrees = TRUE)
 
-summary(jotr.mod)
+summary(jotr.RImod)
 
-save(jotr.mod, file="output/BART/bart.ri.model.Jotr.Rdata")
-
-# load(file="output/BART/bart.ri.model.Jotr.Rdata")
-
-summary(jotr.mod)
+invisible(jotr.RImod$fit[[1]]$state) # MUST do this to save
+write_rds(jotr.RImod, file="output/BART/bart.ri.model.Jotr.rds") # write out for downstream use
 
 
-# YUBR --------------------------------
+# jotr.RImod <-  read_rds(file="output/BART/bart.ri.model.Jotr.rds")
 
-# fitting with vars indicated by varimp on global data:
-yubr.preds <- jotr.preds
-
-yubr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(yubr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
-	data = yubr,
-	group.by = yubr[,'year'],
-	n.chains = 1,
-	k = 2,
-	power = 2,
-	base = 0.95,
-	keepTrees = TRUE)
-
-summary(yubr.mod)
-varimp(yubr.mod)
-
-save(yubr.mod, file="output/BART/bart.ri.model.YUBR.Rdata")
-
-
-# YUJA --------------------------------
-
-# refitting with vars indicated by varimp:
-yuja.preds <- jotr.preds
-
-yuja.mod <- rbart_vi(as.formula(paste(paste('flr', paste(yuja.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
-	data = yuja,
-	group.by = yuja[,'year'],
-	n.chains = 1,
-	k = 2,
-	power = 2,
-	base = 0.95,
-	keepTrees = TRUE)
-
-summary(yuja.mod)
-varimp(yuja.mod)
-
-save(yuja.mod, file="output/BART/bart.ri.model.YUJA.Rdata")
-
-#------------------------------------------------
-# AND ALSO
-
-
-# plot the predictors in raw observations ...
-jotr.preds <- c("tmaxW0vW1", "pptY0", "tmaxW0", "tminW0")
-
-jotr.pred.plot <- flow2 %>% dplyr::select(year, flr, all_of(jotr.preds)) %>% pivot_longer(all_of(jotr.preds), names_to="Predictor", values_to="Value")
-
-
-{cairo_pdf(file="output/figures/RImod_best_predictors_Jotr.pdf", width=6, height=2.5)
-
-ggplot(jotr.pred.plot, aes(x=flr, y=Value)) + geom_jitter(alpha=0.25, size=0.25) + geom_boxplot(alpha=0.5, aes(color=Predictor, fill=Predictor), width=0.5) + 
-
-scale_color_manual(values=park_palette("JoshuaTree")[c(1,2,2,7)], guide="none") +
-scale_fill_manual(values=park_palette("JoshuaTree")[c(1,2,2,7)], guide="none") +
-
-facet_wrap("Predictor", nrow=1, scale="free_y") + labs(x="Flowers observed?", y="Predictor value") + dark_mode(theme_minimal()) + theme(plot.background=element_rect(color="black"))
-
-
-}
-dev.off()
+summary(jotr.RImod)
 
 
 
-
-# plot the predictors in raw observations ...
-yubr.preds <- c("tmaxW0vW1", "pptY0", "vpdmaxW0vW1")
-
-yubr.pred.plot <- yubr %>% dplyr::select(year, flr, all_of(yubr.preds)) %>% pivot_longer(all_of(yubr.preds), names_to="Predictor", values_to="Value")
-
-{cairo_pdf(file="output/figures/RImod_best_predictors_YUBR.pdf", width=6, height=2.5)
-
-ggplot(yubr.pred.plot, aes(x=flr, y=Value)) + geom_jitter(alpha=0.25, size=0.25) + geom_boxplot(alpha=0.5, aes(color=Predictor, fill=Predictor), width=0.5) + 
-
-scale_color_manual(values=park_palette("JoshuaTree")[c(1,2,7)], guide=FALSE) +
-scale_fill_manual(values=park_palette("JoshuaTree")[c(1,2,7)], guide=FALSE) +
-
-facet_wrap("Predictor", nrow=1, scale="free_y") + labs(x="Flowers observed?", y="Predictor value") + dark_mode(theme_minimal()) + theme(plot.background=element_rect(color="black"))
-
-}
-dev.off()
-
-
-
-
-# plot the predictors in raw observations ...
-yuja.preds <- c("pptW0", "vpdmaxW0", "vpdmaxW0vW1")
-
-yuja.pred.plot <- yuja %>% dplyr::select(year, flr, all_of(yuja.preds)) %>% pivot_longer(all_of(yuja.preds), names_to="Predictor", values_to="Value")
-
-
-{cairo_pdf(file="output/figures/RImod_best_predictors_YUJA.pdf", width=6, height=2.5)
-
-ggplot(yuja.pred.plot, aes(x=flr, y=Value)) + geom_jitter(alpha=0.25, size=0.25) + geom_boxplot(alpha=0.5, aes(color=Predictor, fill=Predictor), width=0.5) + 
-
-scale_color_manual(values=park_palette("JoshuaTree")[c(1,7,7)], guide=FALSE) +
-scale_fill_manual(values=park_palette("JoshuaTree")[c(1,7,7)], guide=FALSE) +
-
-facet_wrap("Predictor", nrow=1, scale="free_y") + labs(x="Flowers observed?", y="Predictor value") + dark_mode(theme_minimal()) + theme(plot.background=element_rect(color="black"))
-
-
-}
-dev.off()
 
 

@@ -1,6 +1,6 @@
 # working with phenology-annotated iNat observations
 # Assumes MAJEL environment 
-# jby 2023.01.04
+# jby 2023.03.11
 
 # starting up ------------------------------------------------------------
 
@@ -43,20 +43,47 @@ names(flowering) <- c("lon","lat","year","type","flr")
 prism_temp_rast <- raster("data/PRISM/annual/ppt_Mojave_2010Q1.bil")
 
 # then ...
-for(yr in 1:length(unique(inat$y2))){
+for(yr in unique(inat$y2)){
 
-yes <- 2*(rasterize(dplyr::filter(inat, y2==unique(inat$y2)[yr], phenology!="No Evidence of Flowering")[,c("longitude","latitude")], prism_temp_rast, fun=sum, background=0) > 0)
+# yr <- 2012
 
-no <- rasterize(dplyr::filter(inat, y2==unique(inat$y2)[yr], phenology=="No Evidence of Flowering")[,c("longitude","latitude")], prism_temp_rast, fun=sum, background=0) > 0
+if(length(which(inat$y2==yr & inat$phenology!="No Evidence of Flowering"))>0){
 
-yearyes <- rasterToPoints(yes+no, fun=function(x){x>1})
-yearno <- rasterToPoints(yes+no, fun=function(x){x==1})
+yes <- rasterize(dplyr::filter(inat, y2==yr, phenology!="No Evidence of Flowering")[,c("longitude","latitude")], prism_temp_rast, fun=sum, background=0)
 
-flowering <- rbind(flowering, data.frame(lon=c(yearyes[,"x"],yearno[,"x"]), lat=c(yearyes[,"y"],yearno[,"y"]), year=unique(inat$y2)[yr], flr=rep(c(TRUE,FALSE),c(nrow(yearyes),nrow(yearno)))))
+yearyes <- rasterToPoints(yes, fun=function(x){x>=1})
+
+outyes <-data.frame(lon=yearyes[,"x"], lat=yearyes[,"y"], year=yr, flr=TRUE)
+
+}else{
+
+outyes <- NULL
 
 }
 
+
+if(length(which(inat$y2==yr & inat$phenology=="No Evidence of Flowering"))>0){
+
+no <- rasterize(dplyr::filter(inat, y2==yr, phenology=="No Evidence of Flowering")[,c("longitude","latitude")], prism_temp_rast, fun=sum, background=0)
+
+yearno <- rasterToPoints(no, fun=function(x){x>=1})
+
+outno <- data.frame(lon=yearno[,"x"], lat=yearno[,"y"], year=yr, flr=FALSE)
+
+}else{
+
+outno <- NULL
+
+}
+
+# put it al together
+flowering <- rbind(flowering, outyes, outno)
+
+} # END loop over years
+
 head(flowering) # oh right we've lost type
+glimpse(flowering)
+table(flowering$year)
 
 # separate (sub)species again
 

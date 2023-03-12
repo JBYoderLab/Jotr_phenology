@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2023.01.04
+# jby 2023.03.10
 
 # starting up ------------------------------------------------------------
 
@@ -53,9 +53,13 @@ if(!file.exists("output/figures")) dir.create("output/figures")
 
 
 # dark mode for presentations
-{cairo_pdf("output/figures/iNat_obs_raw.pdf", width=8, height=5.5)
+{cairo_pdf("output/figures/Fig01E_iNat_obs_raw.pdf", width=5.25, height=3)
 
-ggplot(flr.raw.ln, aes(x=year, y=observations, fill=phenology)) + geom_bar(stat="identity", position="dodge") + labs(x="Year of observation", y="iNat records (research grade)") + scale_fill_manual(values=park_palette("JoshuaTree")[c(6,7,3,5)], name="") + dark_mode(theme_ipsum(base_size=16, axis_title_size=18)) + theme(legend.position="bottom", plot.background=element_rect(color="black"))
+ggplot(flr.raw.ln, aes(x=year, y=observations, fill=phenology)) + geom_bar(stat="identity", position="dodge") + labs(x="Year of observation", y="iNaturalist records") + 
+
+scale_fill_manual(values=park_palette("JoshuaTree")[c(6,1,3,5)], name="Phenology annotated") + 
+
+theme_ipsum(base_size=10, axis_title_size=11, axis_title_just="rc") + theme(legend.position=c(0.2, 0.8), legend.key.size=unit(0.175,"in"), plot.margin=unit(c(0.1,0.1,0.05,0.1),"in"))
 
 }
 dev.off()
@@ -187,9 +191,9 @@ geom_sf(data=sdm, fill=park_palette("JoshuaTree")[5], alpha=0.5, color=NA) +
 
 geom_point(data=flow2, aes(x=lon, y=lat, shape=flr, color=flr, size=flr), alpha=0.75) +
 
-scale_shape_manual(values=c(21,20), guide="none") +
-scale_size_manual(values=c(1.2,1), guide="none") +
-scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], guide="none") + # nb these are false, true
+scale_shape_manual(values=c(21,20), labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity") +
+scale_size_manual(values=c(1.2,1), labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity") +
+scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity") + # nb these are false, true
 
 annotation_scale(location = "br", width_hint = 0.3) + 
 annotation_north_arrow(location = "br", which_north = "true", pad_x = unit(0.3, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering) +
@@ -198,7 +202,7 @@ coord_sf(xlim = c(-119, -112.75), ylim = c(33.25, 38), expand = FALSE) +
 
 labs(x="Longitude", y="Latitude") +
 
-dark_mode(theme_bw()) + theme(panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5), panel.background = element_rect(fill = "slategray3"), plot.background = element_rect(color="black"))
+theme_bw() + theme(panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5), panel.background = element_rect(fill = "slategray3"), axis.title=element_blank(), legend.position=c(0.81, 0.925), legend.box.margin=margin(0.01, 0.01, 0.01, 0.01, "in"), legend.key.height=unit(0.15, "in"))
 
 }
 dev.off()

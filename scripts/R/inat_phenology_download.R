@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2023.01.04
+# jby 2023.03.11
 
 # starting up ------------------------------------------------------------
 
@@ -28,7 +28,7 @@ glimpse(test)
 inat_pheno_data <- data.frame(matrix(0,0,7))
 names(inat_pheno_data) <- c("scientific_name", "latitude", "longitude", "url", "image_url", "observed_on", "phenology")
 
-years <- 2010:2022 # to run everything
+years <- 1980:2022 # to run everything (best-confidence models are based on 2008-2022)
 
 # to read back in and continue
 # inat_pheno_data <- read.csv("data/inat_phenology_data.csv", h=TRUE)
@@ -142,7 +142,6 @@ table(valid.rst.ssp$year, valid.rst.ssp$flr) # think that looks good ...
 
 
 glimpse(valid.rst) # okay, let's see how we feel about this
-
 
 
 
