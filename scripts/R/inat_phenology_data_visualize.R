@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2023.03.10
+# jby 2023.03.11
 
 # starting up ------------------------------------------------------------
 
@@ -24,11 +24,11 @@ glimpse(flow)
 
 
 # variant datasets -- dealing with the second flowering in 2019
-flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE)) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
-flow3 <- flow
+flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
+flow3 <- flow |> filter(year>=2008)
 flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
 
-glimpse(flow2) # 2,600 in our final working set
+glimpse(flow2) # 3,016 in our final working set
 
 # split by subspecies
 # swap input datasets to change --- current most trustworthy is flow2, ignoring 2019.5
@@ -41,7 +41,7 @@ glimpse(yubr) # 1,381 obs
 
 #-------------------------------------------------------------------------
 # visualize, if you like
-inat_pheno_data <- read.csv("data/inat_phenology_data_subsp.csv", h=TRUE)
+inat_pheno_data <- read.csv("data/inat_phenology_data_subsp.csv", h=TRUE) |> filter(year>=2008)
 
 flr.raw.ln <- table(inat_pheno_data$year, inat_pheno_data$phenology) %>% as.data.frame() %>% rename(year=Var1, phenology=Var2, observations=Freq)
 
@@ -55,7 +55,7 @@ if(!file.exists("output/figures")) dir.create("output/figures")
 # dark mode for presentations
 {cairo_pdf("output/figures/Fig01E_iNat_obs_raw.pdf", width=5.25, height=3)
 
-ggplot(flr.raw.ln, aes(x=year, y=observations, fill=phenology)) + geom_bar(stat="identity", position="dodge") + labs(x="Year of observation", y="iNaturalist records") + 
+ggplot(flr.raw.ln, aes(x=year, y=observations, fill=phenology)) + geom_bar(stat="identity", position="dodge") + labs(x="Year of observation", y="iNaturalist records") +
 
 scale_fill_manual(values=park_palette("JoshuaTree")[c(6,1,3,5)], name="Phenology annotated") + 
 
@@ -181,7 +181,7 @@ geom_sf(data=urban, fill="antiquewhite2", color=NA) +
 geom_sf(data=states, fill=NA, color="antiquewhite4") + 
 #geom_sf(data=parks, color=NA, fill=park_palette("JoshuaTree")[6], alpha=0.25) +
 
-geom_sf(data=rivers, color="slategray3", size=0.4) +
+geom_sf(data=rivers, color="slategray3", linewidth=0.4) +
 geom_sf(data=lakes, fill="slategray3", color=NA) + 
 
 geom_sf(data=sdm, fill=park_palette("JoshuaTree")[5], alpha=0.5, color=NA) +
@@ -191,9 +191,9 @@ geom_sf(data=sdm, fill=park_palette("JoshuaTree")[5], alpha=0.5, color=NA) +
 
 geom_point(data=flow2, aes(x=lon, y=lat, shape=flr, color=flr, size=flr), alpha=0.75) +
 
-scale_shape_manual(values=c(21,20), labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity") +
-scale_size_manual(values=c(1.2,1), labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity") +
-scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity") + # nb these are false, true
+scale_shape_manual(values=c(21,20), labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity, 2008-22") +
+scale_size_manual(values=c(1.2,1), labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity, 2008-22") +
+scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], labels=c("No evidence of flowering", "Buds, flowers, or fruit recorded"), name="Flowering activity, 2008-22") + # nb these are false, true
 
 annotation_scale(location = "br", width_hint = 0.3) + 
 annotation_north_arrow(location = "br", which_north = "true", pad_x = unit(0.3, "in"), pad_y = unit(0.3, "in"), style = north_arrow_fancy_orienteering) +

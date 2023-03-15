@@ -1,6 +1,6 @@
 # Using BARTs to model Joshua tree flowering
 # best run on MAJEL
-# last used/modified jby, 2023.02.24
+# last used/modified jby, 2023.03.12
 
 rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -27,8 +27,8 @@ glimpse(flow)
 
 
 # variant datasets -- dealing with the second flowering in 2019
-flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE)) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
-flow3 <- flow
+flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
+flow3 <- flow |> filter(year>=2008)
 flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
 
 glimpse(flow2) # 2,600 in our final working set
@@ -42,6 +42,9 @@ yubr <- filter(flow2, type=="YUBR")
 
 glimpse(yuja) # 1,160 obs (after iffy ones excluded)
 glimpse(yubr) # 1,440 obs
+
+jotr.flyrs <- read.csv("output/jotr_reconstructed_flowering_years.csv")
+glimpse(jotr.flyrs)
 
 #-------------------------------------------------------------------------
 # predictor exploration
@@ -59,45 +62,22 @@ ggplot(flow2.ln, aes(x=value, y=1+flr)) + geom_jitter(alpha=0.05, height=0.125) 
 dev.off()
 
 #-------------------------------------------------------------------------
-# fit candidate BART models, stepwise
+# predictors from best-fit models
 
 # predictors
 xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1") # year + weather data, "curated"
 
 # Full range ------------------------------------
-
-# variable importance across the whole predictor set
-jotr.varimp <- varimp.diag(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames], ri.data=flow2[,"year"])
-
-save(jotr.varimp, file="output/BART/bart.ri.varimp.Jotr.Rdata")
-load("output/BART/bart.ri.varimp.Jotr.Rdata")
-
-
-# refitting with vars indicated by varimp:
-jotr.preds <- c("tmaxW0vW1", "pptY0", "tmaxW0", "tminW0")
-
-jotr.mod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
-	data = flow2,
-	group.by = flow2[,'year'],
-	n.chains = 1,
-	k = 2,
-	power = 2,
-	base = 0.95,
-	keepTrees = TRUE)
+jotr.mod <- read_rds("output/BART/bart.model.Jotr.rds")
 
 summary(jotr.mod)
 
-save(jotr.mod, file="output/BART/bart.ri.model.Jotr.Rdata")
+jotr.preds <- attr(jotr.mod$fit$data@x, "term.labels")
 
-# load(file="output/BART/bart.ri.model.Jotr.Rdata")
-
-summary(jotr.mod)
 
 #-------------------------------------------------------------------------
 # plot raw predictors and time-series and maybe also partials?
 
-# plot the predictors in raw observations ...
-jotr.preds <- c("tmaxW0vW1", "vpdmaxW0vW1", "pptY0", "vpdminW0vW1", "tmaxW0", "pptW0") # should match above
 
 jotr.pred.plot <- flow2 %>% dplyr::select(year, flr, all_of(jotr.preds)) |> pivot_longer(all_of(jotr.preds), names_to="Predictor", values_to="Value") |> mutate(Predictor=factor(Predictor,jotr.preds))
 
@@ -105,8 +85,8 @@ jotr.pred.plot <- flow2 %>% dplyr::select(year, flr, all_of(jotr.preds)) |> pivo
 
 ggplot(jotr.pred.plot, aes(x=flr, y=Value)) + geom_jitter(alpha=0.25, size=0.25) + geom_boxplot(alpha=0.5, aes(color=Predictor, fill=Predictor), width=0.5) + 
 
-scale_color_manual(values=park_palette("JoshuaTree")[c(2,3,1,3,2,1)], guide="none") +
-scale_fill_manual(values=park_palette("JoshuaTree")[c(2,3,1,3,2,1)], guide="none") +
+scale_color_manual(values=park_palette("JoshuaTree")[c(3,2,1,3,1)], guide="none") +
+scale_fill_manual(values=park_palette("JoshuaTree")[c(3,2,1,3,1)], guide="none") +
 
 facet_wrap("Predictor", nrow=1, scale="free_y") + labs(x="Flowers observed?", y="Predictor value") + theme_minimal(base_size=9) + theme(plot.background=element_rect(color="black"))
 
@@ -117,9 +97,7 @@ dev.off()
 #-------------------------------------------------------------------------
 # time-series of selected predictors
 
-jotr.hist.flowering <- read.csv("output/historic_flowering_reconst_jotr.csv")
-
-sample_sites <- jotr.hist.flowering |> filter(year==2022) |> sample_n(300) |> dplyr::select(lat, lon)
+sample_sites <- jotr.flyrs |> dplyr::select(lat, lon)
 
 sample_predictor_history <- data.frame(matrix(0,0,3+length(jotr.preds)))
 names(sample_predictor_history) <- c("lat", "lon", "year", jotr.preds)
@@ -136,25 +114,55 @@ pred_history_long <- sample_predictor_history |> pivot_longer(all_of(jotr.preds)
 pred_history_long$predictor[pred_history_long$predictor=="pptY0"] <- "Year-of precip, mm"
 pred_history_long$predictor[pred_history_long$predictor=="pptW0"] <- "Winter-of precip, mm"
 pred_history_long$predictor[pred_history_long$predictor=="tmaxW0"] <- "Winter-of max temp, °C"
-pred_history_long$predictor[pred_history_long$predictor=="tmaxW0vW1"] <- "Max temp winter-of vs winter before, °C"
-pred_history_long$predictor[pred_history_long$predictor=="vpdmaxW0vW1"] <- "Max VPD winter-of vs winter before"
-pred_history_long$predictor[pred_history_long$predictor=="vpdminW0vW1"] <- "Min VPD winter-of vs winter before"
+pred_history_long$predictor[pred_history_long$predictor=="tmaxW0vW1"] <- "Max winter temp change, °C"
+pred_history_long$predictor[pred_history_long$predictor=="vpdmaxW0vW1"] <- "Max winter VPD change"
+pred_history_long$predictor[pred_history_long$predictor=="vpdminW0vW1"] <- "Min winter VPD change"
 
 pred_history_summary <- pred_history_long |> group_by(year, predictor) |> summarize(mn=mean(value), md=median(value), lo95=quantile(value, 0.025), up95=quantile(value, 0.975), lo50=quantile(value, 0.25), up50=quantile(value, 0.75))
 
 
 {cairo_pdf(file="output/figures/BART_predictors_sampled_history.pdf", width=6, height=4)
 
-ggplot() + geom_linerange(data=pred_history_summary, aes(x=year, ymin=lo95, ymax=up95), size=0.25, color="gray40") + geom_linerange(data=pred_history_summary, aes(x=year, ymin=lo50, ymax=up50), size=1.25, color="gray40") + geom_smooth(data=pred_history_long, aes(x=year, y=value), method="lm", size=0.5, color="blue") + geom_point(data=pred_history_summary, aes(x=year, y=md), color="white", size=0.25) + facet_wrap("predictor", scale="free_y") + labs(x="Year", y=NULL, title="Trends in best predictors, 1900-2022", subtitle="300 random points, 95% density, 50% density, and median") + theme_minimal(base_size=9)
+ggplot() + geom_linerange(data=pred_history_summary, aes(x=year, ymin=lo95, ymax=up95), size=0.25, color="gray40") + geom_linerange(data=pred_history_summary, aes(x=year, ymin=lo50, ymax=up50), size=1.25, color="gray40") + geom_smooth(data=pred_history_long, aes(x=year, y=value), method="lm", size=0.5, color="blue") + geom_point(data=pred_history_summary, aes(x=year, y=md), color="white", size=0.25) + facet_wrap("predictor", scale="free_y") + labs(x="Year", y=NULL, title="Trends in best predictors, 1900-2022", subtitle="50% density, and median") + theme_minimal(base_size=9)
 
 }
 dev.off()
 
-{cairo_pdf(file="output/figures/RImod_predictors_sampled_history_trends.pdf", width=6, height=4)
+{cairo_pdf(file="output/figures/BART_predictors_sampled_history_trends.pdf", width=6, height=4)
 
-ggplot(pred_history_long, aes(x=year, y=value)) + geom_smooth(method="lm", size=0.25, color="white") + facet_wrap("predictor", scale="free_y") + labs(x="Year", y=NULL, title="Trends in best predictors, 1900-2022", subtitle="300 random points") + theme_minimal(base_size=9)
+ggplot(pred_history_long, aes(x=year, y=value)) + geom_smooth(method="lm", size=0.25, color="white") + facet_wrap("predictor", scale="free_y") + labs(x="Year", y=NULL, title="Trends in best predictors, 1900-2022") + theme_minimal(base_size=9)
 
 }
 dev.off()
 
+# change from 1900-1929 to 1990-2019
+predictor_var_early <- pred_history_long |> filter(year%in%1900:1929) |> group_by(lat, lon, predictor) |> summarize(var_1900_1929=var(value))
 
+predictor_var_late <- pred_history_long |> filter(year%in%1990:2019) |> group_by(lat, lon, predictor) |> summarize(var_1990_2019=var(value))
+
+predictor_var_change <- full_join(predictor_var_early, predictor_var_late) |> mutate(var_change=var_1990_2019-var_1900_1929) |> pivot_longer(starts_with("var"), values_to="value", names_to="var_stat")
+glimpse(predictor_var_change)
+
+# BART predictor variance comparisons
+{cairo_pdf(file="output/figures/BART_predictors_variance_changes.pdf", width=6, height=4)
+
+ggplot(filter(predictor_var_change, var_stat!="var_change"), aes(x=value, fill=var_stat)) + geom_histogram(position="dodge") + facet_wrap("predictor", scale="free") + 
+
+scale_fill_manual(values=park_palette("JoshuaTree")[c(1,2)], labels=c("1900-1929", "1990-2019"), name="Variance for") + 
+
+labs(y="Grid cells", x="Variance") + theme_minimal(base_size=10) + theme(legend.position=c(0.8, 0.2)) 
+
+}
+dev.off()
+
+# predictor variance changes VS flowering years change
+jotr.flyrs.pred.var <- left_join(predictor_var_change, jotr.flyrs)
+
+glimpse(jotr.flyrs.pred.var)
+
+{cairo_pdf(file="output/figures/Flowering_years_vs_predictor_variance_changes.pdf", width=6, height=4)
+
+ggplot(filter(jotr.flyrs.pred.var,var_stat=="var_change"), aes(x=value, y=flyrs_change)) + geom_point(alpha=0.1)  + geom_smooth(method="lm", se=FALSE) + facet_wrap("predictor", scale="free") + labs(x="Change in variance, 1900-1929 vs 1990-2019", y="Change in flowering years, 1900-1929 vs 1990-2019") + theme_minimal(base_size=10)
+
+}
+dev.off()
