@@ -6,7 +6,6 @@ Jotr_phenology.text
 # MacOS -------------------------------------
 # General
 **/.DS_Store
-*/.DS_Store
 .DS_Store
 .AppleDouble
 .LSOverride
@@ -84,4 +83,5 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
-*.history
+.DS_Store
+.DS_Store
