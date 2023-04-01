@@ -1,6 +1,6 @@
 # Using BARTs to model Joshua tree flowering
 # best run on MAJEL
-# last used/modified jby, 2023.03.11
+# last used/modified jby, 2023.03.31
 
 rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -27,29 +27,34 @@ dim(flow)
 glimpse(flow)
 
 
-# variant datasets -- dealing with the second flowering in 2019
-flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
+# variant datasets -- dealing with the second flowering in 2018
+flow2 <- flow %>% filter(!(year==2018.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
 flow3 <- flow |> filter(year>=2008)
-flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
+flow3$year[flow3$year==2018.5] <- 2018 # or merge 2018.5 into 2018?
 
-glimpse(flow2) # 3,016 in our final working set
+glimpse(flow2) # 3,009 in our final working set
 
-ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") + theme_bw()
+table(flow2$year)
+
+flow4 <- flow2 |> filter(year>=2016) # years with at least 100 records
+glimpse(flow4) # 2,674 from 2016 on
+
+# ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") + theme_bw()
 
 # split by subspecies
 # swap input datasets to change --- current most trustworthy is flow2, ignoring 2019.5
 yuja <- filter(flow2, type=="YUJA") 
 yubr <- filter(flow2, type=="YUBR")
 
-glimpse(yuja) # 1,309 obs (after iffy ones excluded)
-glimpse(yubr) # 1,440 obs
+glimpse(yuja) # 1,310 obs (after iffy ones excluded)
+glimpse(yubr) # 1,699 obs
 
 #-------------------------------------------------------------------------
 # predictor exploration
 
-xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1") # year + weather data, "curated"
+xnames <- c("pptY0", "pptY1", "pptY2", "pptY0Y1", "pptY1Y2", "tmaxY0", "tmaxY0Y1", "tminY0", "tminY0Y1", "vpdmaxY0", "vpdmaxY0Y1", "vpdminY0", "vpdminY0Y1") # weather data, curated
 
-flow2.ln <- flow2 %>% pivot_longer(cols=all_of(xnames), values_to="value", names_to="variable")
+flow2.ln <- flow2 %>% pivot_longer(cols=all_of(xnames), values_to="value", names_to="variable") |> mutate(variable = factor(variable, xnames))
 glimpse(flow2.ln)
 
 {cairo_pdf("output/figures/predictor_differences.pdf", width=11, height=4)
@@ -63,23 +68,28 @@ dev.off()
 # fit candidate BART models, stepwise
 
 # predictors
-xnames <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1") # weather data, "curated"
+xnames <- c("pptY0", "pptY1", "pptY2", "pptY0Y1", "pptY1Y2", "tmaxY0", "tmaxY0Y1", "tminY0", "tminY0Y1", "vpdmaxY0", "vpdmaxY0Y1", "vpdminY0", "vpdminY0Y1") # weather data, curated
 
 # Full range ------------------------------------
 
 # variable importance across the whole predictor set
 jotr.varimp <- varimp.diag(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames]) # now sans RI
-# favors vpdmaxW0vW1, tmaxW0vW1, pptY0, vpdminW0vW1, and pptW0 
+# favors pptY1Y2, pptY0Y1, vpdmaxY0, vpdminY0Y1, tminY0, tmaxY0Y1
 
 write_rds(jotr.varimp, file="output/BART/bart.varimp.Jotr.rds") # switching save modes now
 # jotr.varimp <- read_rds("output/BART/bart.varimp.Jotr.rds")
 
 # and, sure, let's do stepwise fitting too
 jotr.mod.step <- bart.step(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xnames], full=FALSE, quiet=TRUE)
-# favors pptY0 pptW0W1 tmaxW0 tmaxW0vW1 vpdmaxW0vW1
+# favors pptY0Y1 pptY1Y2 tmaxY0Y1 tminY0 tminY0Y1 vpdmaxY0 vpdminY0Y1 (holy shit, that's all the varimp calls?)
+
+invisible(jotr.mod.step$fit$state)
+write_rds(jotr.mod.step, file="output/BART/bart.step.model.Jotr.rds")
+
+summary(jotr.mod.step)
 
 # refitting with vars indicated by varimp:
-jotr.preds <- c("vpdmaxW0vW1", "tmaxW0vW1", "pptY0", "vpdminW0vW1", "pptW0")
+jotr.preds <- c("pptY1Y2", "pptY0Y1", "vpdmaxY0", "vpdminY0Y1", "tminY0", "tmaxY0Y1")
 
 jotr.mod <- bart(y.train=as.numeric(flow2[,"flr"]), x.train=flow2[,jotr.preds], keeptrees=TRUE)
 
@@ -125,7 +135,7 @@ for(yr in unique(flow2$year)){
 inbag <- flow2 |> filter(year!=yr)
 oobag <- flow2 |> filter(year==yr)
 
-testmod <- bart(y.train=as.numeric(flow2[,"flr"]), x.train=flow2[,jotr.preds], keeptrees=TRUE)
+testmod <- bart(y.train=as.numeric(inbag[,"flr"]), x.train=inbag[,jotr.preds], keeptrees=TRUE)
 
 # data for OOB year
 OOBpreds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
@@ -146,9 +156,51 @@ LOOvalid <- LOOvalid |> arrange(year) # eeeeeh
 
 write.table(LOOvalid, "output/BART/year-year-LOO.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
-mean(LOOvalid$AUC) # 0.67
-sd(LOOvalid$AUC) # 0.10
-sd(LOOvalid$AUC)/sqrt(nrow(LOOvalid)) # SE = 0.03
+mean(LOOvalid$AUC) # 0.59
+sd(LOOvalid$AUC) # 0.17
+sd(LOOvalid$AUC)/sqrt(nrow(LOOvalid)) # SE = 0.04
+
+#-------------------------------------------------------------------------
+# "recent" model based only on years with >100 observations
+
+flow4 <- flow2 |> filter(year >= 2016)
+
+jotr.recent.mod <- bart(y.train=as.numeric(flow4[,"flr"]), x.train=flow4[,jotr.preds], keeptrees=TRUE)
+
+summary(jotr.recent.mod)
+
+invisible(jotr.recent.mod$fit$state)
+write_rds(jotr.recent.mod, file="output/BART/bart.recent.model.Jotr.rds")
+# jotr.mod <- read_rds("output/BART/bart.recent.model.Jotr.rds")
+
+# cross-validate with earlier data ---------------
+earlyValid <- data.frame(matrix(0,0,4))
+colnames(earlyValid) <- c("year", "lat", "lon", "flr", "PrFlr")
+
+# LOOP over years
+for(yr in 2008:2015){
+
+# yr <- 2010
+oobag <- flow2 |> filter(year==yr)
+
+# data for OOB year
+OOBpreds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
+
+# prediction at OOB sites with the RI predictor (year) removed
+testpred <- predict(jotr.recent.mod, OOBpreds[[attr(jotr.recent.mod$fit$data@x, "term.labels")]])
+
+earlyPreds <- raster::extract(testpred, oobag[,c("lon", "lat")]) # predicted OOB sites with model
+
+earlyValid <- rbind(earlyValid, data.frame(year=yr, lon=oobag$lon, lat=oobag$lat, flr=oobag$flr, PrFlr=earlyPreds[,"layer"]))
+
+}
+
+glimpse(earlyValid)
+
+# hacked out of the summary function for rbarts
+auc <- performance(prediction(earlyValid$PrFlr, earlyValid$flr), "auc")@y.values[[1]]
+
+auc # 0.63, okay?
 
 
 #-------------------------------------------------------------------------
@@ -172,6 +224,50 @@ write_rds(jotr.RImod, file="output/BART/bart.ri.model.Jotr.rds") # write out for
 
 summary(jotr.RImod)
 
+
+# LOO validation by year
+LOOvalidRI <- data.frame(matrix(0,0,4))
+colnames(LOOvalidRI) <- c("year", "N_flr", "N_noflr", "AUC")
+
+# LOOP over years
+for(yr in unique(flow2$year)){
+
+# yr <- 2010
+
+inbag <- flow2 |> filter(year!=yr)
+oobag <- flow2 |> filter(year==yr)
+
+testmod <- rbart_vi(as.formula(paste(paste('flr', paste(jotr.preds, collapse=' + '), sep = ' ~ '), 'year', sep=' - ')),
+	data = inbag,
+	group.by = inbag[,'year'],
+	n.chains = 1,
+	k = 2,
+	power = 2,
+	base = 0.95,
+	keepTrees = TRUE)
+
+# data for OOB year
+OOBpreds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
+
+# prediction at OOB sites with the RI predictor (year) removed
+testpred.ri0 <- predict(testmod, OOBpreds[[jotr.preds]], splitby=20, ri.data=yr, ri.name='year', ri.pred=FALSE)
+
+OOBpreds <- raster::extract(testpred.ri0, oobag[,c("lon", "lat")]) # predicted OOB sites with model
+
+# hacked out of the summary function for rbarts
+auc <- performance(prediction(OOBpreds, oobag$flr),"auc")@y.values[[1]]
+
+LOOvalidRI <- rbind(LOOvalidRI, data.frame(year=yr, N_flr=length(which(oobag$flr)), N_noflr=length(which(!oobag$flr)), AUC=auc))
+
+} # END loop over years
+
+LOOvalidRI <- LOOvalidRI |> arrange(year) # eeeeeh
+
+write.table(LOOvalidRI, "output/BART/RI_year-year-LOO.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+mean(LOOvalidRI$AUC) # 0.57
+sd(LOOvalidRI$AUC) # 0.15
+sd(LOOvalidRI$AUC)/sqrt(nrow(LOOvalidRI)) # SE = 0.04
 
 
 

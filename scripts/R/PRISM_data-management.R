@@ -1,6 +1,6 @@
 # working with PRISM historical monthlys
 # Assumes MAJEL environment 
-# jby 2022.10.13
+# jby 2023.03.28
 
 # starting up ------------------------------------------------------------
 
@@ -30,7 +30,7 @@ if(!dir.exists("data/PRISM/annual")) dir.create("data/PRISM/annual")
 
 
 # FOR LOOP each year in PRISM
-for(yr in 2019:2022){
+for(yr in 1895:2021){
 
 # yr=2021
 
@@ -63,23 +63,19 @@ get_prism_monthlys(type="vpdmin", mon=1:12, year=yr, keepZip=FALSE)
 
 	writeRaster(pptQ, paste("data/PRISM/annual/ppt_Mojave_", yr, "Q", q, ".bil", sep=""), overwrite=TRUE)
 
-	vpdmaxQ <- crop(sum(raster(pd_to_file(prism_archive_subset("vpdmax", "monthly", year=yr, mon=mos[1]))), raster(pd_to_file(prism_archive_subset("vpdmax", "monthly", year=yr, mon=mos[2]))), raster(pd_to_file(prism_archive_subset("vpdmax", "monthly", year=yr, mon=mos[3])))), MojExt)
+	# max vpd in each quarter
+	vpdmaxQ <- crop(max(raster(pd_to_file(prism_archive_subset("vpdmax", "monthly", year=yr, mon=mos[1]))), raster(pd_to_file(prism_archive_subset("vpdmax", "monthly", year=yr, mon=mos[2]))), raster(pd_to_file(prism_archive_subset("vpdmax", "monthly", year=yr, mon=mos[3])))), MojExt)
 
 	writeRaster(vpdmaxQ, paste("data/PRISM/annual/vpdmax_Mojave_", yr, "Q", q, ".bil", sep=""), overwrite=TRUE)
 
-	vpdminQ <- crop(sum(raster(pd_to_file(prism_archive_subset("vpdmin", "monthly", year=yr, mon=mos[1]))), raster(pd_to_file(prism_archive_subset("vpdmin", "monthly", year=yr, mon=mos[2]))), raster(pd_to_file(prism_archive_subset("vpdmin", "monthly", year=yr, mon=mos[3])))), MojExt)
+	# min vpd in each quarter
+	vpdminQ <- crop(min(raster(pd_to_file(prism_archive_subset("vpdmin", "monthly", year=yr, mon=mos[1]))), raster(pd_to_file(prism_archive_subset("vpdmin", "monthly", year=yr, mon=mos[2]))), raster(pd_to_file(prism_archive_subset("vpdmin", "monthly", year=yr, mon=mos[3])))), MojExt)
 
 	writeRaster(vpdminQ, paste("data/PRISM/annual/vpdmin_Mojave_", yr, "Q", q, ".bil", sep=""), overwrite=TRUE)
 
+	# re-insert file clearance here!!
 	
 	} # END loop over quarters
-
-# clean out raw data
-sapply(prism_archive_subset("tmax", "monthly", year=yr, mon=1:12), function(x) system(paste("rm -R data/PRISM/", x, sep="")))
-sapply(prism_archive_subset("tmin", "monthly", year=yr, mon=1:12), function(x) system(paste("rm -R data/PRISM/", x, sep="")))
-sapply(prism_archive_subset("ppt", "monthly", year=yr, mon=1:12), function(x) system(paste("rm -R data/PRISM/", x, sep="")))
-sapply(prism_archive_subset("vpdmax", "monthly", year=yr, mon=1:12), function(x) system(paste("rm -R data/PRISM/", x, sep="")))
-sapply(prism_archive_subset("vpdmin", "monthly", year=yr, mon=1:12), function(x) system(paste("rm -R data/PRISM/", x, sep="")))
 
 
 } # END loop over years
@@ -186,44 +182,63 @@ for(yr in 2019:2022){
 if(!dir.exists("data/PRISM/derived_predictors")) dir.create("data/PRISM/derived_predictors")
 
 # NEW predictor variables, informed by more specific hypotheses
-# DEFINED: y0 is the year flowers are observed; y1 the year before, y2 two years before ...
-# pptW0 - precip total, Oct y1 to Mar y0 --- "winter-of" precip
-# pptY0 - precip total, Apr y1 to Mar y0 --- "year-of" precip
-# pptW0W1 - precip total, Oct y2 to Mar y1 + Oct y1 to Mar y0 --- "winter accumulated" precip 
-# pptY0W1 - precip total, Oct y2 to Mar y0 --- "year accumulated" precip 
-# pptY0Y1 - precip total, Apr y2 to Mar y0 --- "all accumulated" precip 
-# tmaxW0 - max temp, Oct y1 to Mar y0 --- "winter-of" max temp
-# tminW0 - min temp, Oct y1 to Mar y0 --- "winter-of" min temp
-# tmaxW0vW1 - difference in max temp, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- max-temp difference
-# tminW0vW1 - difference in min temp, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- min-temp difference
-# vpdmaxW0 - max VPD, Oct y1 to Mar y0 --- "winter-of" max VPD
-# vpdminW0 - max VPD, Oct y1 to Mar y0 --- "winter-of" min VPD
-# vpdmaxW0vW1 - difference in max VPD, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- max-VPD difference
-# vpdminW0vW1 - difference in min VPD, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- min-VPD difference
-
+# DEFINED: y0 is Apr-Mar of the year flowers are observed; y1 the year before, y2 two years before ...
+# for each of YEAR 0, 1, and 2 ...
+# total precip (ppt)
+# max and min temperature (tmax and tmin)
+# max and min vapor pressure deficit (vpdmax and vpdmin)
+# and then also CONTRASTS Y0-Y1, Y1-Y2 for each of these
 
 # FOR LOOP over the historical data ...
 # nb, because retrospective, can't do all the way back to 1895
-for(yr in 1900:2022){
+rast_ref <- raster("data/PRISM/annual/ppt_Mojave_2015Q1.bil") # standard to resample against, because WTF
+
+for(yr in 2020:2022){
 
 # yr <- 1900
 
-pptW0 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q4.bil", sep="")), raster)),sum)
-pptY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q",4:2,".bil", sep="")), raster)),sum)
-pptW0W1 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q4.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-2,"Q4.bil", sep="")), raster)),sum)
-pptY0W1 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q",4:1,".bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-2,"Q4.bil", sep="")), raster)),sum)
-pptY0Y1 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q",4:1,".bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-2,"Q",4:2,".bil", sep="")), raster)),sum)
-tmaxW0 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmax_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/tmax_Mojave_",yr-1,"Q4.bil", sep="")), raster)), max)
-tminW0 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmin_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/tmin_Mojave_",yr-1,"Q4.bil", sep="")), raster)), min)
-tmaxW0vW1 <- tmaxW0 - calc(brick(lapply(c(paste("data/PRISM/annual/tmax_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/tmax_Mojave_",yr-2,"Q4.bil", sep="")), raster)), max)
-tminW0vW1 <- tminW0 - calc(brick(lapply(c(paste("data/PRISM/annual/tmin_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/tmin_Mojave_",yr-2,"Q4.bil", sep="")), raster)), min)
-vpdmaxW0 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmax_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmax_Mojave_",yr-1,"Q4.bil", sep="")), raster)), max)
-vpdminW0 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmin_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmin_Mojave_",yr-1,"Q4.bil", sep="")), raster)), min)
-vpdmaxW0vW1 <- vpdmaxW0 - calc(brick(lapply(c(paste("data/PRISM/annual/vpdmax_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmax_Mojave_",yr-2,"Q4.bil", sep="")), raster)), max)
-vpdminW0vW1 <- vpdminW0 - calc(brick(lapply(c(paste("data/PRISM/annual/vpdmin_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmin_Mojave_",yr-2,"Q4.bil", sep="")), raster)), min)
+# ppt, all summarized
+pptY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),sum) # borked in 2021
+pptY1 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-2,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),sum)
+pptY2 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr-2,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-3,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),sum)
 
-preds <- brick(c(pptW0, pptY0, pptW0W1, pptY0W1, pptY0Y1, tmaxW0, tminW0, tmaxW0vW1, tminW0vW1, vpdmaxW0, vpdminW0, vpdmaxW0vW1, vpdminW0vW1))
-names(preds) <- c("pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1")
+pptY0Y1 <- pptY0 - pptY1
+pptY1Y2 <- pptY1 - pptY2
+
+# tmax, all summarized
+tmaxY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmax_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/tmax_Mojave_",yr-1,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),max) # borked in 2021
+tmaxY1 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmax_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/tmax_Mojave_",yr-2,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),max)
+tmaxY2 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmax_Mojave_",yr-2,"Q1.bil", sep=""), paste("data/PRISM/annual/tmax_Mojave_",yr-3,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),max)
+
+tmaxY0Y1 <- tmaxY0 - tmaxY1
+tmaxY1Y2 <- tmaxY1 - tmaxY2
+
+# tmin, all summarized
+tminY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmin_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/tmin_Mojave_",yr-1,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),min) # borked in 2021
+tminY1 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmin_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/tmin_Mojave_",yr-2,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),min)
+tminY2 <- calc(brick(lapply(c(paste("data/PRISM/annual/tmin_Mojave_",yr-2,"Q1.bil", sep=""), paste("data/PRISM/annual/tmin_Mojave_",yr-3,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),min)
+
+tminY0Y1 <- tminY0 - tminY1
+tminY1Y2 <- tminY1 - tminY2
+
+# vpdmax, all summarized
+vpdmaxY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmax_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmax_Mojave_",yr-1,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),max) # borked in 2021
+vpdmaxY1 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmax_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmax_Mojave_",yr-2,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),max)
+vpdmaxY2 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmax_Mojave_",yr-2,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmax_Mojave_",yr-3,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),max)
+
+vpdmaxY0Y1 <- vpdmaxY0 - vpdmaxY1
+vpdmaxY1Y2 <- vpdmaxY1 - vpdmaxY2
+
+# vpdmin, all summarized
+vpdminY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmin_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmin_Mojave_",yr-1,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),min) # borked in 2021
+vpdminY1 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmin_Mojave_",yr-1,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmin_Mojave_",yr-2,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),min)
+vpdminY2 <- calc(brick(lapply(c(paste("data/PRISM/annual/vpdmin_Mojave_",yr-2,"Q1.bil", sep=""), paste("data/PRISM/annual/vpdmin_Mojave_",yr-3,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),min)
+
+vpdminY0Y1 <- vpdminY0 - vpdminY1
+vpdminY1Y2 <- vpdminY1 - vpdminY2
+
+preds <- brick(c(pptY0, pptY1, pptY2, pptY0Y1, pptY1Y2, tmaxY0, tmaxY1, tmaxY2, tmaxY0Y1, tmaxY1Y2, tminY0, tminY1, tminY2, tminY0Y1, tminY1Y2, vpdmaxY0, vpdmaxY1, vpdmaxY2, vpdmaxY0Y1, vpdmaxY1Y2, vpdminY0, vpdminY1, vpdminY2, vpdminY0Y1, vpdminY1Y2))
+names(preds) <- c("pptY0", "pptY1", "pptY2", "pptY0Y1", "pptY1Y2", "tmaxY0", "tmaxY1", "tmaxY2", "tmaxY0Y1", "tmaxY1Y2", "tminY0", "tminY1", "tminY2", "tminY0Y1", "tminY1Y2", "vpdmaxY0", "vpdmaxY1", "vpdmaxY2", "vpdmaxY0Y1", "vpdmaxY1Y2", "vpdminY0", "vpdminY1", "vpdminY2", "vpdminY0Y1", "vpdminY1Y2")
 
 writeRaster(preds, paste("data/PRISM/derived_predictors/PRISM_derived_predictors_", yr,".grd", sep=""), overwrite=TRUE) # confirmed write-out and read-in
 

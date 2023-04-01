@@ -1,6 +1,6 @@
 # working with phenology-annotated iNat observations
 # Assumes MAJEL environment 
-# jby 2023.03.11
+# jby 2023.03.31
 
 # starting up ------------------------------------------------------------
 
@@ -21,7 +21,7 @@ MojExt <- extent(-119, -112, 33, 38)
 
 inat <- read.csv("data/inat_phenology_data_subsp.csv", h=TRUE) %>% mutate(observed_on = ymd(observed_on))
 
-glimpse(inat) # 10,159 raw observations
+glimpse(inat) # 10,209 raw observations
 table(inat$phenology)
 table(inat$phenology, inat$year)
 
@@ -33,9 +33,9 @@ inat <- filter(inat, !(phenology=="Fruiting" & month(observed_on)<4)) # clean th
 #-------------------------------------------------------------------------
 # organize iNat observations for extraction of summarized PRISM data
 
-# dealing with the 2019 "anomaly" by creating a second pseudo-year
+# dealing with the 2018 "anomaly" by creating a second pseudo-year
 inat$y2 <- inat$year
-inat$y2[inat$year==2019 & month(inat$observed_on)>6] <- 2019.5
+inat$y2[inat$year==2018 & month(inat$observed_on)>6] <- 2018.5
 
 flowering <- data.frame(matrix(0,0,5))
 names(flowering) <- c("lon","lat","year","type","flr")
@@ -99,24 +99,19 @@ table(flo_in_ssp$year, flo_in_ssp$flr) # think that looks good ...
 
 write.table(flo_in_ssp, "output/flowering_obs_rasterized_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
+flo_in_ssp <- read.csv("output/flowering_obs_rasterized_subsp.csv")
+glimpse(flo_in_ssp)
+
 #-------------------------------------------------------------------------
 # attach PRISM data to flowering/not flowering observations
 
 # NEW predictor variables, informed by more specific hypotheses
 # DEFINED: y0 is the year flowers are observed; y1 the year before, y2 two years before ...
-# pptW0 - precip total, Oct y1 to Mar y0 --- "winter-of" precip
-# pptY0 - precip total, Apr y1 to Mar y0 --- "year-of" precip
-# pptW0W1 - precip total, Oct y2 to Mar y1 + Oct y1 to Mar y0 --- "winter accumulated" precip 
-# pptY0W1 - precip total, Oct y2 to Mar y0 --- "year accumulated" precip 
-# pptY0Y1 - precip total, Apr y2 to Mar y0 --- "all accumulated" precip 
-# tmaxW0 - max temp, Oct y1 to Mar y0 --- "winter-of" max temp
-# tminW0 - min temp, Oct y1 to Mar y0 --- "winter-of" min temp
-# tmaxW0vW1 - difference in max temp, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- max-temp difference
-# tminW0vW1 - difference in min temp, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- min-temp difference
-# vpdmaxW0 - max VPD, Oct y1 to Mar y0 --- "winter-of" max VPD
-# vpdminW0 - max VPD, Oct y1 to Mar y0 --- "winter-of" min VPD
-# vpdmaxW0vW1 - difference in max VPD, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- max-VPD difference
-# vpdminW0vW1 - difference in min VPD, Oct y2 to Mar y1 vs Oct y1 to Mar y0 --- min-VPD difference
+# for each of YEAR 0, 1, and 2 ...
+# total precip (ppt)
+# max and min temperature (tmax and tmin)
+# max and min vapor pressure deficit (vpdmax and vpdmin)
+# and then also CONTRASTS Y0-Y1, Y1-Y2 for each of these
 
 flr.clim <- data.frame(matrix(0,0,ncol(flo_in_ssp)+13))
 names(flr.clim) <- c(colnames(flo_in_ssp), "pptW0", "pptY0", "pptW0W1", "pptY0W1", "pptY0Y1", "tmaxW0", "tminW0", "tmaxW0vW1", "tminW0vW1", "vpdmaxW0", "vpdminW0", "vpdmaxW0vW1", "vpdminW0vW1")
@@ -143,6 +138,7 @@ write.table(flr.clim, "output/flowering_obs_climate_v2_subsp.csv", sep=",", col.
 
 glimpse(flr.clim)
 table(flr.clim$type, useNA="ifany")
+table(flr.clim$year, useNA="ifany")
 
 # and that's generated a data file we can feed into Embarcadero ... in the next script!
 

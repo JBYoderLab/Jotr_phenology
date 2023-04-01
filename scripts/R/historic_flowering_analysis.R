@@ -1,6 +1,6 @@
 # Analyzing predicted historical flowering in Joshua tree
 # Assumes local environment
-# jby 2023.03.11
+# jby 2023.03.31
 
 # starting up ------------------------------------------------------------
 
@@ -13,7 +13,7 @@ library("raster")
 library("sp")
 library("sf")
 library("hexbin")
-
+library("embarcadero")
 
 source("../shared/Rscripts/base.R") # my special mix of personal functions
 source("../shared/Rscripts/base_graphics.R") # my special mix of personal functions
@@ -44,6 +44,16 @@ MojExt <- extent(-119, -112, 33, 38) # Mojave extent, maybe useful
 
 # expert validation observations
 vobs <- read.csv("data/Validation_obs_by_spp.csv")
+
+glimpse(vobs)
+
+inatv<- read.csv("data/inat_phenology_data_subsp.csv") |> filter(year < 2008)
+table(inatv$year)
+glimpse(inatv)
+
+vobs <- rbind(vobs, data.frame(lat=inatv$latitude, lon=inatv$longitude, location=NA, type=inatv$type, year=inatv$year, obs_by="iNat", obs_flowers=inatv$phenology!="No Evidence of Flowering", obs_fruit=inatv$phenology=="Fruiting", obs_moths=NA, obs_no_flowers=inatv$phenology=="No Evidence of Flowering"))
+
+table(vobs$obs_by)
 
 
 # Jotr, without RI --------------------------------
@@ -83,8 +93,8 @@ jotr.hist.flowering <- read.csv("output/historic_flowering_reconst_jotr.csv")
 
 # comparing predictions with and without RI
 
-table(jotr.flowering.histories$prFL>0.19, jotr.flowering.histories$RI.prFL>0.22) # hmmmm!
-chisq.test(table(jotr.flowering.histories$prFL>0.19, jotr.flowering.histories$RI.prFL>0.22)) # p < 2.2e-16, natch
+table(jotr.flowering.histories$prFL>0.24, jotr.flowering.histories$RI.prFL>0.21) # hmmmm!
+chisq.test(table(jotr.flowering.histories$prFL>0.24, jotr.flowering.histories$RI.prFL>0.21)) # p < 2.2e-16, natch
 
 RIvNon <- jotr.flowering.histories |> group_by(year) |> do(broom::tidy(cor.test(~prFL+RI.prFL, data=., method="spearman"))) %>% ungroup()
 
@@ -136,8 +146,8 @@ write.table(hist.flowering, "output/historic_flowering_reconst_YUBR-YUJA.csv", s
 # Validation observations
 
 # best-power prediction thresholds from the original models
-# jotr: 0.19
-# jotr RI: 0.23
+# jotr: 0.24
+# jotr RI: 0.21
 
 # YUBR: 0.30
 # YUJA: 0.23
@@ -153,10 +163,10 @@ for(yr in unique(vobs$year)){
 vsub <- filter(vobs, year==yr)
 
 vsub$jotr_prFlr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.19
+vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.24
 
 vsub$jotr_RI.prFlr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$jotr_RI.Flr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.23
+vsub$jotr_RI.Flr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.21
 
 
 #vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
@@ -169,12 +179,17 @@ valid <- rbind(vsub, valid)
 
 }
 
+valid <- filter(valid, !is.na(jotr_prFlr))
+
 glimpse(valid)
 table(valid$obs_by)
 head(valid) # cool
 tail(valid)
 
 write.table(valid, "output/expert_obs_validations.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+performance(prediction(valid$jotr_prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.57 overall, whee
+performance(prediction(valid$jotr_RI.prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.54 overall, whee
 
 
 # RANGE-WIDE -------------
@@ -183,36 +198,44 @@ write.table(valid, "output/expert_obs_validations.csv", sep=",", col.names=TRUE,
 table(valid$obs_flowers, valid$jotr_Flr) # eesh
 chisq.test(table(valid$obs_flowers, valid$jotr_Flr)) # n.s.
 
-t.test(jotr_prFlr~obs_flowers, data=valid) # p = 0.08 hmmm
+t.test(jotr_prFlr~obs_flowers, data=valid) # p = 0.03 okay!
 
 # jotr, with RI
 table(valid$obs_flowers, valid$jotr_RI.Flr) # eesh
-chisq.test(table(valid$obs_flowers, valid$jotr_RI.Flr)) # n.s.
+chisq.test(table(valid$obs_flowers, valid$jotr_RI.Flr)) # p = 0.1 hmm
 
-t.test(jotr_RI.prFlr~obs_flowers, data=valid) # p = 0.1 hmmm
+t.test(jotr_RI.prFlr~obs_flowers, data=valid) # n.s.
 
 # BY SPECIES -------------
 vYUBR <- filter(valid, type=="YUBR")
 vYUJA <- filter(valid, type=="YUJA")
 
+
 # without RI
-t.test(jotr_prFlr~obs_flowers, data=vYUBR) # p = 8e-05 HEY
-t.test(jotr_prFlr~obs_flowers, data=vYUJA) # n.s. and WRONG
-chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_Flr)) # p = 0.02 (confirmed correct way)
-chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_Flr)) # p = 0.0004 (WORSE than random wow)
+performance(prediction(vYUBR$jotr_prFlr, vYUBR$obs_flowers), "auc")@y.values[[1]] # 0.64 overall, whee
+performance(prediction(vYUJA$jotr_prFlr, vYUJA$obs_flowers), "auc")@y.values[[1]] # 0.54 overall, whee
+
+t.test(jotr_prFlr~obs_flowers, data=vYUBR) # p = 0.01 OKAY
+t.test(jotr_prFlr~obs_flowers, data=vYUJA) # n.s. but right direction?
+chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_Flr)) # n.s. (confirmed correct way)
+chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_Flr)) # n.s. 
 
 # with RI
-t.test(jotr_RI.prFlr~obs_flowers, data=vYUBR) # p = 0.001 OKAY
-t.test(jotr_RI.prFlr~obs_flowers, data=vYUJA) # n.s. and WRONG
-chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_RI.Flr)) # p = 0.09 (confirmed correct way)
+performance(prediction(vYUBR$jotr_RI.prFlr, vYUBR$obs_flowers), "auc")@y.values[[1]] # 0.64 overall, whee
+performance(prediction(vYUJA$jotr_RI.prFlr, vYUJA$obs_flowers), "auc")@y.values[[1]] # 0.54 overall, whee
+
+
+t.test(jotr_RI.prFlr~obs_flowers, data=vYUBR) # p = 0.08 hmm
+t.test(jotr_RI.prFlr~obs_flowers, data=vYUJA) # n.s. but right direction?
+chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_RI.Flr)) # p = 0.03 OKAY
 chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_RI.Flr)) # n.s. whee
 
 
 # can I visualize all this?
 
-ggplot(valid, aes(y=jotr_prFlr, group=type, x=interaction(obs_flowers,type), shape=obs_flowers)) + geom_jitter() + geom_hline(yintercept=0.19, linetype=2) + scale_shape_manual(values=c(1,19)) 
+ggplot(filter(valid, !is.na(type)), aes(y=jotr_prFlr, group=type, x=interaction(obs_flowers,type), shape=obs_flowers)) + geom_jitter() + geom_hline(yintercept=0.24, linetype=2) + scale_shape_manual(values=c(1,19)) 
 
-ggplot(valid, aes(y=jotr_RI.prFlr, group=type, x=interaction(obs_flowers,type), shape=obs_flowers)) + geom_jitter() + geom_hline(yintercept=0.23, linetype=2) + scale_shape_manual(values=c(1,19)) 
+ggplot(valid, aes(y=jotr_RI.prFlr, group=type, x=interaction(obs_flowers,type), shape=obs_flowers)) + geom_jitter() + geom_hline(yintercept=0.21, linetype=2) + scale_shape_manual(values=c(1,19)) 
 
 
 #-------------------------------------------------------------------------
@@ -411,7 +434,7 @@ dev.off()
 
 # trends within single cells
 
-declining <- cellcors %>% filter(p.value < 0.05, estimate < 0) 
+declining <- cellcors %>% filter(p.value < 0.01, estimate < 0) # NONE
 increasing <- cellcors %>% filter(p.value < 0.01, estimate > 0) 
 stable <- cellcors %>% filter(estimate > -0.05, estimate < 0.05) 
 
@@ -478,20 +501,20 @@ dev.off()
 # Flowering years
 
 # best-power prediction thresholds from the original models
-# jotr: 0.19
-# jotr with RI: 0.23
+# jotr: 0.24
+# jotr with RI: 0.21
 
 # YUBR: 0.30
 # YUJA: 0.23
 
 flyrs.jotr <- jotr.hist.flowering %>% group_by(lon,lat) %>% 
 summarize(
-	flyrs_all=length(which(prFL>=0.22)), 
-	flyrs_1900_1929=length(which(prFL>=0.22 & year<=1929)), 
-	flyrs_1990_2019=length(which(prFL>=0.22 & year>=1990 & year<=2019)),
-	flyrs_RI_all=length(which(RI.prFL>=0.23)), 
-	flyrs_RI_1900_1929=length(which(RI.prFL>=0.23 & year<=1929)), 
-	flyrs_RI_1990_2019=length(which(RI.prFL>=0.23 & year>=1990 & year<=2019)),
+	flyrs_all=length(which(prFL>=0.24)), 
+	flyrs_1900_1929=length(which(prFL>=0.24 & year<=1929)), 
+	flyrs_1990_2019=length(which(prFL>=0.24 & year>=1990 & year<=2019)),
+	flyrs_RI_all=length(which(RI.prFL>=0.21)), 
+	flyrs_RI_1900_1929=length(which(RI.prFL>=0.21 & year<=1929)), 
+	flyrs_RI_1990_2019=length(which(RI.prFL>=0.21 & year>=1990 & year<=2019)),
 	) |> mutate(
 	flyrs_change=flyrs_1990_2019-flyrs_1900_1929,
 	flyrs_RI_change=flyrs_RI_1990_2019-flyrs_RI_1900_1929
@@ -504,17 +527,17 @@ write.table(flyrs.jotr, "output/jotr_reconstructed_flowering_years.csv", sep=","
 
 # without RI
 quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))
-quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))/123
+quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))/123 # median 0.26
 
-quantile(flyrs.jotr$flyrs_1900_1929, c(0.025,0.5,0.975))/30 # hmmm
-quantile(flyrs.jotr$flyrs_1990_2019, c(0.025,0.5,0.975))/30
+quantile(flyrs.jotr$flyrs_1900_1929, c(0.025,0.5,0.975))/30 # median 0.23
+quantile(flyrs.jotr$flyrs_1990_2019, c(0.025,0.5,0.975))/30 # median 0.30
 
 # with RI
 quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))
-quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))/123
+quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))/123 # median 0.34 (!)
 
-quantile(flyrs.jotr$flyrs_RI_1900_1929, c(0.025,0.5,0.975))/30 # hmmm
-quantile(flyrs.jotr$flyrs_RI_1990_2019, c(0.025,0.5,0.975))/30
+quantile(flyrs.jotr$flyrs_RI_1900_1929, c(0.025,0.5,0.975))/30 # median 0.37
+quantile(flyrs.jotr$flyrs_RI_1990_2019, c(0.025,0.5,0.975))/30 #  median 0.37
 
 
 ggplot(flyrs.jotr, aes(x=flyrs_1900_1929)) + geom_histogram(bins=30)
@@ -599,7 +622,7 @@ ggplot(sub.hist.flowering, aes(x=year, y=prFL)) + geom_hex() + geom_hline(yinter
 dev.off()
 
 
-# sumarize ...
+# summarize ...
 sum.hist.flowering <- hist.flowering %>% group_by(year) %>% summarize(mdPrFL = median(prFL), lo50PrFL = quantile(prFL, 0.25), up50PrFL = quantile(prFL, 0.75), lo95PrFL = quantile(prFL, 0.025), up95PrFL = quantile(prFL, 0.975))
 
 {cairo_pdf("output/figures/prFL-vs-time_linerange.pdf", width=6.5, height=3.5)
