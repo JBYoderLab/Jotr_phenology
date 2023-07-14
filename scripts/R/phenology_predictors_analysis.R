@@ -26,12 +26,12 @@ dim(flow)
 glimpse(flow) # 3,134 rasterized and ready
 
 
-# variant datasets -- dealing with the second flowering in 2019
-flow2 <- flow %>% filter(!(year==2019.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
+# variant datasets -- dealing with the second flowering in 2018
+flow2 <- flow %>% filter(!(year==2018.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
 flow3 <- flow |> filter(year>=2008)
-flow3$year[flow3$year==2019.5] <- 2019 # or merge 2019.5 into 2019?
+flow3$year[flow3$year==2018.5] <- 2018 # or merge 2019.5 into 2019?
 
-glimpse(flow2) # 3,016 in our final working set
+glimpse(flow2) # 3,009 in our final working set
 
 ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") + theme_bw()
 
@@ -40,8 +40,8 @@ ggplot(flow2, aes(x=lon, y=lat, color=flr)) + geom_point() + facet_wrap("year") 
 yuja <- filter(flow2, type=="YUJA") 
 yubr <- filter(flow2, type=="YUBR")
 
-glimpse(yuja) # 1,309 obs (after iffy ones excluded)
-glimpse(yubr) # 1,707 obs
+glimpse(yuja) # 1,310 obs (after iffy ones excluded)
+glimpse(yubr) # 1,699 obs
 
 jotr.flyrs <- read.csv("output/jotr_reconstructed_flowering_years.csv")
 glimpse(jotr.flyrs)
@@ -88,8 +88,8 @@ jotr.pred.plot <- flow2 %>% dplyr::select(year, flr, all_of(jotr.preds)) |> pivo
 
 ggplot(jotr.pred.plot, aes(x=flr, y=Value)) + geom_jitter(alpha=0.1, size=0.25) + geom_boxplot(alpha=0.5, aes(color=Predictor, fill=Predictor), width=0.5) + 
 
-scale_color_manual(values=park_palette("JoshuaTree")[c(1,1,3,2,1,2)], guide="none") +
-scale_fill_manual(values=park_palette("JoshuaTree")[c(1,1,3,2,1,2)], guide="none") +
+scale_color_manual(values=park_palette("JoshuaTree")[c(1,1,3,3,2,2)], guide="none") +
+scale_fill_manual(values=park_palette("JoshuaTree")[c(1,1,3,3,2,2)], guide="none") +
 
 facet_wrap("Predictor", nrow=1, scale="free_y") + labs(x="Flowers observed?", y="Predictor value") + theme_minimal(base_size=9) + theme(plot.background=element_rect(color="black"))
 
@@ -117,11 +117,12 @@ pred_history_long <- sample_predictor_history |> pivot_longer(all_of(jotr.preds)
 pred_history_long$predictor[pred_history_long$predictor=="pptY1Y2"] <- "Delta[1-2]~precip~(mm)"
 pred_history_long$predictor[pred_history_long$predictor=="pptY0Y1"] <- "Delta[0-1]~precip~(mm)"
 pred_history_long$predictor[pred_history_long$predictor=="vpdmaxY0"] <- "Flowering~year~max~VPD"
-pred_history_long$predictor[pred_history_long$predictor=="tmaxY0Y1"] <- "Delta[0-1]~max~temp~(degree*C)"
-pred_history_long$predictor[pred_history_long$predictor=="pptY0"] <- "Flowering~year~precip~(mm)"
+pred_history_long$predictor[pred_history_long$predictor=="vpdminY0Y1"] <- "Delta[0-1]~min~VPD"
 pred_history_long$predictor[pred_history_long$predictor=="tminY0"] <- "Flowering~year~min~temp~(degree*C)"
+pred_history_long$predictor[pred_history_long$predictor=="tmaxY0Y1"] <- "Delta[0-1]~max~temp~(degree*C)"
 
-pred_history_summary <- pred_history_long |> group_by(year, predictor) |> summarize(mn=mean(value), md=median(value), lo95=quantile(value, 0.025), up95=quantile(value, 0.975), lo50=quantile(value, 0.25), up50=quantile(value, 0.75)) |> mutate(predictor = factor(predictor, c("Delta[1-2]~precip~(mm)", "Delta[0-1]~precip~(mm)", "Flowering~year~max~VPD", "Delta[0-1]~max~temp~(degree*C)", "Flowering~year~precip~(mm)", "Flowering~year~min~temp~(degree*C)")))
+ 
+pred_history_summary <- pred_history_long |> group_by(year, predictor) |> summarize(mn=mean(value), md=median(value), lo95=quantile(value, 0.025), up95=quantile(value, 0.975), lo50=quantile(value, 0.25), up50=quantile(value, 0.75)) |> mutate(predictor = factor(predictor, c("Delta[1-2]~precip~(mm)", "Delta[0-1]~precip~(mm)", "Flowering~year~max~VPD", "Delta[0-1]~min~VPD", "Flowering~year~min~temp~(degree*C)", "Delta[0-1]~max~temp~(degree*C)")))
 
 
 {cairo_pdf(file="output/figures/BART_predictors_sampled_history.pdf", width=6, height=4)
@@ -190,7 +191,7 @@ labs(y="Grid cells", x="Mean value") + theme_minimal(base_size=10) + theme(legen
 }
 dev.off()
 
-# predictor variance changes VS flowering years change
+# predictor mean changes VS flowering years change
 jotr.flyrs.pred.var <- left_join(predictor_mean_change, jotr.flyrs)
 
 glimpse(jotr.flyrs.pred.var)

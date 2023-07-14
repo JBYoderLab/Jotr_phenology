@@ -1,6 +1,6 @@
 # Analyzing predicted historical flowering in Joshua tree
 # Assumes local environment
-# jby 2023.03.31
+# jby 2023.07.05
 
 # starting up ------------------------------------------------------------
 
@@ -31,7 +31,7 @@ yubr.pres <- st_zm(st_intersection(sdm.pres, st_transform(filter(spp.ranges, Nam
 yuja.pres <- st_zm(st_intersection(sdm.pres, st_transform(filter(spp.ranges, Name=="YUJA"), crs=crs(sdm.pres))))
 
 # flowering observation data
-obs <- read.csv("output/flowering_obs_climate_v2_subsp.csv") %>% mutate(y2 = year) %>% mutate(year=floor(year), type = factor(type, c("YUBR", "YUJA")))
+obs <- read.csv("output/flowering_obs_climate_subsp.csv") %>% mutate(y2 = year) %>% mutate(year=floor(year), type = factor(type, c("YUBR", "YUJA")))
 
 # raster files of predicted prFL
 jotr.files <- list.files("output/BART/predictions", pattern=".bil", full=TRUE)
@@ -47,14 +47,9 @@ vobs <- read.csv("data/Validation_obs_by_spp.csv")
 
 glimpse(vobs)
 
-inatv<- read.csv("data/inat_phenology_data_subsp.csv") |> filter(year < 2008)
-table(inatv$year)
-glimpse(inatv)
-
-vobs <- rbind(vobs, data.frame(lat=inatv$latitude, lon=inatv$longitude, location=NA, type=inatv$type, year=inatv$year, obs_by="iNat", obs_flowers=inatv$phenology!="No Evidence of Flowering", obs_fruit=inatv$phenology=="Fruiting", obs_moths=NA, obs_no_flowers=inatv$phenology=="No Evidence of Flowering"))
-
 table(vobs$obs_by)
 
+jotr.preds <- c("pptY1Y2", "pptY0Y1", "vpdmaxY0", "vpdminY0Y1", "tminY0", "tmaxY0Y1")
 
 # Jotr, without RI --------------------------------
 jotr.histStack <- raster::stack(sapply(jotr.files, function(x) crop(raster::raster(x), MojExt)))
@@ -86,21 +81,29 @@ jotr.flowering.histories <- jotr.hist.flowering |> left_join(jotr.ri.hist.flower
 
 glimpse(jotr.flowering.histories)
 
-
-write.table(jotr.flowering.histories, "output/historic_flowering_reconst_jotr.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+write.table(jotr.flowering.histories, "output/historic_flowering_reconst_jotr.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE) # write out and read in
 
 jotr.hist.flowering <- read.csv("output/historic_flowering_reconst_jotr.csv")
 
 # comparing predictions with and without RI
+RItest <- jotr.hist.flowering |> filter(year>=2008)
 
-table(jotr.flowering.histories$prFL>0.24, jotr.flowering.histories$RI.prFL>0.21) # hmmmm!
-chisq.test(table(jotr.flowering.histories$prFL>0.24, jotr.flowering.histories$RI.prFL>0.21)) # p < 2.2e-16, natch
+baseVri <- table(RItest$prFL>0.26, RItest$RI.prFL>0.25) 
+baseVri # rows, prFL; columns, RI.prFL
 
-RIvNon <- jotr.flowering.histories |> group_by(year) |> do(broom::tidy(cor.test(~prFL+RI.prFL, data=., method="spearman"))) %>% ungroup()
+sum(baseVri[c(1,4)])/sum(baseVri) # overall 0.84 agreed
+baseVri[2]/sum(baseVri) # base says T, RI says F
+baseVri[3]/sum(baseVri) # RI says T, base says F
+
+chisq.test(table(RItest$prFL>0.26, RItest$RI.prFL>0.25)) # p < 2.2e-16, natch
+
+RIvNon <- RItest |> group_by(year) |> do(broom::tidy(cor.test(~prFL+RI.prFL, data=., method="spearman"))) %>% ungroup()
 
 glimpse(RIvNon)
 RIvNon |> filter(p.value < 0.01, estimate < 0) # okay!
 RIvNon |> filter(p.value < 0.01, estimate > 0) # whew! probabilities positively correlated in *all* years
+
+median(RIvNon$estimate)
 
 ggplot(RIvNon, aes(x=estimate)) + geom_histogram() # and yeah the skew is in the direction we want
 
@@ -137,22 +140,70 @@ glimpse(yuja.hist.flowering)
 write.table(yuja.hist.flowering, "output/historic_flowering_reconst_YUJA.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
 
 
-# YUJA+YUBR modeled separately --------------------------------
-hist.flowering <- rbind(data.frame(type="YUBR", yubr.hist.flowering), data.frame(type="YUJA", yuja.hist.flowering))
+# YUJA+YUBR vs rangewide base model --------------------------------
 
-write.table(hist.flowering, "output/historic_flowering_reconst_YUBR-YUJA.csv", sep=",", col.names=TRUE, row.names=FALSE, quote=FALSE)
+# YUBR vs rangewide
+yubr.mod <- read_rds("output/BART/bart.model.yubr.rds")
+summary(yubr.mod) # best cutoff is 0.28
+
+yubr.compare <- yubr.hist.flowering |> rename(yubr.prFL=prFL) |> mutate(lat=as.character(round(lat,3)), lon=as.character(round(lon,3)), year=as.character(year)) |> left_join(jotr.hist.flowering |> mutate(lat=as.character(round(lat,3)), lon=as.character(round(lon,3)), year=as.character(year))) |> mutate(lat=as.numeric(lat), lon=as.numeric(lon), year=as.numeric(year))
+glimpse(yubr.compare) # okay that worked, ack
+
+yubrtest <- yubr.compare |> filter(year>=2008)
+
+yubrVbase <- table(yubr.compare$prFL>0.26, yubr.compare$yubr.prFL>0.28) # hmmmm!
+
+sum(yubrVbase[c(1,4)])/sum(yubrVbase) # overall 0.62 agreed
+
+chisq.test(yubrVbase) # p < 2.2e-16, natch
+
+yubrVjotr <- yubrtest |> group_by(year) |> do(broom::tidy(cor.test(~prFL+yubr.prFL, data=., method="spearman"))) %>% ungroup()
+
+glimpse(yubrVjotr)
+yubrVjotr |> filter(p.value < 0.01, estimate < 0) # okay!
+yubrVjotr |> filter(p.value < 0.01, estimate > 0) # whew! probabilities positively correlated in *all* years
+
+min(yubrVjotr$estimate)
+median(yubrVjotr$estimate)
+
+
+# YUJA vs rangewide
+yuja.mod <- read_rds("output/BART/bart.model.yuja.rds")
+summary(yuja.mod) # best cutoff is 0.16
+
+yuja.compare <- yuja.hist.flowering |> rename(yuja.prFL=prFL) |> mutate(lat=as.character(round(lat,3)), lon=as.character(round(lon,3)), year=as.character(year)) |> left_join(jotr.hist.flowering |> mutate(lat=as.character(round(lat,3)), lon=as.character(round(lon,3)), year=as.character(year))) |> mutate(lat=as.numeric(lat), lon=as.numeric(lon), year=as.numeric(year))
+glimpse(yuja.compare) # okay that worked, ack
+
+yujatest <- yuja.compare |> filter(year>=2008)
+
+yujaVbase <- table(yuja.compare$prFL>0.26, yuja.compare$yuja.prFL>0.16) # hmmmm!
+
+sum(yujaVbase[c(1,4)])/sum(yujaVbase) # overall 0.67 agreed
+
+chisq.test(yujaVbase) # p < 2.2e-16, natch
+
+yujaVjotr <- yujatest |> group_by(year) |> do(broom::tidy(cor.test(~prFL+yuja.prFL, data=., method="spearman"))) %>% ungroup()
+
+glimpse(yujaVjotr)
+yujaVjotr |> filter(p.value < 0.01, estimate < 0) # okay!
+yujaVjotr |> filter(estimate < 0) # okay!
+yujaVjotr |> filter(p.value < 0.01, estimate > 0) # whew! probabilities positively correlated in *all* years
+
+min(yujaVjotr$estimate)
+median(yujaVjotr$estimate)
+
 
 #-------------------------------------------------------------------------
 # Validation observations
 
 # best-power prediction thresholds from the original models
-# jotr: 0.24
-# jotr RI: 0.21
+# jotr: 0.26
+# jotr RI: 0.25
 
-# YUBR: 0.30
-# YUJA: 0.23
+# YUBR: 0.28
+# YUJA: 0.16
 
-glimpse(vobs) 
+glimpse(vobs) # 167 records
 
 valid <- NULL # initialize, in a lazy way
 
@@ -163,17 +214,17 @@ for(yr in unique(vobs$year)){
 vsub <- filter(vobs, year==yr)
 
 vsub$jotr_prFlr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.24
+vsub$jotr_Flr <- raster::extract(jotr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.26
 
 vsub$jotr_RI.prFlr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-vsub$jotr_RI.Flr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.21
+vsub$jotr_RI.Flr <- raster::extract(jotr.ri.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.25
 
 
-#vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-#vsub$YUBR_Flr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.30
+vsub$YUBR_prFlr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+vsub$YUBR_Flr <- raster::extract(yubr.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.28
 
-#vsub$YUJA_prFlr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
-#vsub$YUJA_Flr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.23
+vsub$YUJA_prFlr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")])
+vsub$YUJA_Flr <- raster::extract(yuja.histStack[[paste("prFL.",yr,sep="")]], vsub[,c("lon", "lat")]) >= 0.16
 
 valid <- rbind(vsub, valid)
 
@@ -188,206 +239,202 @@ tail(valid)
 
 write.table(valid, "output/expert_obs_validations.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
-performance(prediction(valid$jotr_prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.57 overall, whee
-performance(prediction(valid$jotr_RI.prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.54 overall, whee
-
 
 # RANGE-WIDE -------------
 
 # without RI
-table(valid$obs_flowers, valid$jotr_Flr) # eesh
-chisq.test(table(valid$obs_flowers, valid$jotr_Flr)) # n.s.
+performance(prediction(valid$jotr_prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.60 overall
 
 t.test(jotr_prFlr~obs_flowers, data=valid) # p = 0.03 okay!
 
 # jotr, with RI
-table(valid$obs_flowers, valid$jotr_RI.Flr) # eesh
-chisq.test(table(valid$obs_flowers, valid$jotr_RI.Flr)) # p = 0.1 hmm
+performance(prediction(valid$jotr_RI.prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.56 overall
 
-t.test(jotr_RI.prFlr~obs_flowers, data=valid) # n.s.
+t.test(jotr_RI.prFlr~obs_flowers, data=valid) # p = 0.11 hm
 
-# BY SPECIES -------------
+# SINGLE SPECIES -------------
 vYUBR <- filter(valid, type=="YUBR")
 vYUJA <- filter(valid, type=="YUJA")
 
+# YUBR
+performance(prediction(vYUBR$YUBR_prFlr, vYUBR$obs_flowers), "auc")@y.values[[1]] # 0.60 overall, whee
+performance(prediction(valid$YUBR_prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.51 overall, whee
 
-# without RI
-performance(prediction(vYUBR$jotr_prFlr, vYUBR$obs_flowers), "auc")@y.values[[1]] # 0.64 overall, whee
-performance(prediction(vYUJA$jotr_prFlr, vYUJA$obs_flowers), "auc")@y.values[[1]] # 0.54 overall, whee
+t.test(YUBR_prFlr~obs_flowers, data=vYUBR) # p = 0.1
 
-t.test(jotr_prFlr~obs_flowers, data=vYUBR) # p = 0.01 OKAY
-t.test(jotr_prFlr~obs_flowers, data=vYUJA) # n.s. but right direction?
-chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_Flr)) # n.s. (confirmed correct way)
-chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_Flr)) # n.s. 
+# YUJA
+performance(prediction(vYUJA$YUJA_prFlr, vYUJA$obs_flowers), "auc")@y.values[[1]] # 0.48 overall, whee
+performance(prediction(valid$YUJA_prFlr, valid$obs_flowers), "auc")@y.values[[1]] # 0.57 overall, whee
 
-# with RI
-performance(prediction(vYUBR$jotr_RI.prFlr, vYUBR$obs_flowers), "auc")@y.values[[1]] # 0.64 overall, whee
-performance(prediction(vYUJA$jotr_RI.prFlr, vYUJA$obs_flowers), "auc")@y.values[[1]] # 0.54 overall, whee
-
-
-t.test(jotr_RI.prFlr~obs_flowers, data=vYUBR) # p = 0.08 hmm
-t.test(jotr_RI.prFlr~obs_flowers, data=vYUJA) # n.s. but right direction?
-chisq.test(table(vYUBR$obs_flowers, vYUBR$jotr_RI.Flr)) # p = 0.03 OKAY
-chisq.test(table(vYUJA$obs_flowers, vYUJA$jotr_RI.Flr)) # n.s. whee
-
-
-# can I visualize all this?
-
-ggplot(filter(valid, !is.na(type)), aes(y=jotr_prFlr, group=type, x=interaction(obs_flowers,type), shape=obs_flowers)) + geom_jitter() + geom_hline(yintercept=0.24, linetype=2) + scale_shape_manual(values=c(1,19)) 
-
-ggplot(valid, aes(y=jotr_RI.prFlr, group=type, x=interaction(obs_flowers,type), shape=obs_flowers)) + geom_jitter() + geom_hline(yintercept=0.21, linetype=2) + scale_shape_manual(values=c(1,19)) 
-
-
-#-------------------------------------------------------------------------
-# observations versus same-year predictions
-
-hist.flowering <- read.csv("output/historic_flowering_reconst_YUBR-YUJA.csv", h=TRUE) %>% mutate(type = factor(type, c("YUBR", "YUJA")))
-
-glimpse(hist.flowering)
-
-{cairo_pdf("output/figures/obs-vs-prediction_2021.pdf", width=6, height=5)
-
-ggplot() + 
-
-geom_tile(data=filter(jotr.hist.flowering, year==2021), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
-
-geom_point(data=filter(obs, year==2021), aes(x=lon, y=lat, shape=flr, color=flr, size=flr)) + 
-scale_shape_manual(values=c(21,20), name="Flowers seen?") + 
-scale_size_manual(values=c(1.1,1), name="Flowers seen?") + 
-scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], name="Flowers seen?") +
-
-labs(x="Latitude", y="Longitude") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
-
-{cairo_pdf("output/figures/obs-vs-prediction_2022.pdf", width=6, height=5)
-
-ggplot() + 
-
-geom_tile(data=filter(jotr.hist.flowering, year==2022), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
-
-geom_point(data=filter(obs, year==2022), aes(x=lon, y=lat, shape=flr, color=flr, size=flr)) + 
-scale_shape_manual(values=c(21,20), name="Flowers seen?") + 
-scale_size_manual(values=c(1.1,1), name="Flowers seen?") + 
-scale_color_manual(values=park_palette("JoshuaTree")[c(5,3)], name="Flowers seen?") +
-
-labs(x="Latitude", y="Longitude") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
+t.test(YUJA_prFlr~obs_flowers, data=vYUJA) # n.s. AND wrong direction?
 
 
 
+# visualize accuracy with original data and validations ------------------
+
+jotr.mod <- read_rds("output/BART/bart.model.Jotr.rds")
+names(jotr.mod)
+
+obs_valid <- summary(jotr.mod)$data |> dplyr::select(fitted, observed) |> mutate(type="Training data")
+glimpse(obs_valid) 
+
+exp_valid <- valid |> dplyr::select(jotr_prFlr, obs_flowers) |> rename(fitted=jotr_prFlr, observed=obs_flowers) |> mutate(observed=as.numeric(observed), type="Validation records")
+glimpse(exp_valid)
+
+accu <- rbind(obs_valid, exp_valid) |> mutate(type=factor(type, c("Training data", "Validation records")), classified=fitted>0.2635843)
+
+# model accuracy figure
+mod_accuracy <- ggplot(accu, aes(y=as.factor(observed), x=fitted)) + geom_vline(xintercept=0.26, linewidth=0.5, color="gray60") + geom_jitter(height=0.15, aes(fill=classified, color=classified, shape=classified, size=classified, alpha=classified)) + geom_boxplot(fill=NA, color="black", linewidth=0.5, shape=20, outlier.color=NA, width=0.5) + facet_wrap("type", nrow=2) + 
+
+annotate(geom="text", x=0.27, y=1.45, label="Classfication cutoff", hjust=0, color="gray40", size=3) +
+
+scale_y_discrete(labels=c("False", "True")) + labs(y="Flowers observed", x="Predicted Pr(Flowers)") +
+
+scale_fill_manual(values=c("#ffffcc", NA)) +
+scale_color_manual(values=c("gray60", "#253494")) +
+scale_shape_manual(values=c(21, 19)) + 
+scale_size_manual(values=c(1, 1.2)) + 
+scale_alpha_manual(values=c(0.75, 0.5)) + 
+
+theme_minimal(base_size=10) + theme(legend.position="none", plot.margin=unit(c(0.1,0.1,0.1,0.1),"in"), strip.text=element_text(size=10, hjust=0))
+
+# and then also the predictor selection figure
+jotr.varimp <- read_rds("output/BART/bart.varimp.Jotr.rds")
+
+jotr.varimp$data <- jotr.varimp$data |> mutate(trees = factor(trees, c(10,20,50,100,150,200)))
+
+levels(jotr.varimp$data$names) <- c("Delta[Y1-2]*PPT", "Delta[Y0-1]*PPT", "Max*VPD[Y0]", "Delta[Y0-1]*Min*VPD", "Min*Temp[Y0]", "Delta[Y0-1]*Max*Temp", "PPT[Y0]", "PPT[Y1]", "Min*VPD[Y0]", "Delta[Y0-1]*Max*VPD", "Max*Temp[Y0]", "PPT[Y2]", "Delta[Y0-1]*Min*Temp")
+
+jotr.varimp$labels$group <- "Trees"
+jotr.varimp$labels$colour <- "Trees"
+
+label_parse <- function(breaks){ parse(text=breaks) } # need this, for reasons
+
+mod_varimp <- ggplot(jotr.varimp$data, aes(x=names, y=imp, color=trees, group=trees)) + geom_line(linewidth=0.75) + geom_point(size=1.5, color="gray30") + scale_color_manual(values=c('#c7e9b4', '#7fcdbb', '#41b6c4', '#1d91c0', '#225ea8', '#0c2c84'), name="Trees") + labs(y="Relative contribution") + scale_x_discrete(label=label_parse) + theme_minimal() + theme(legend.position=c(0.8, 0.75), axis.text=element_text(size=9), axis.text.x=element_text(angle=45, hjust=1), axis.title.x=element_blank(), legend.text=element_text(size=8), legend.title=element_text(size=8), legend.key.size=unit(0.15, "in"))  # okay nice
 
 
-# all years with observations, global
-{cairo_pdf("output/figures/obs-vs-prediction_Jotr.pdf", width=9.5, height=7.5)
+p <- read_rds("output/BART/bart.model.Jotr.partials.rds")
 
-ggplot() + 
+partvals <- rbind(
+				data.frame(predictor="Delta[Y1-2]*PPT~(mm)", p[[1]]$data),
+				data.frame(predictor="Delta[Y0-1]*PPT~(mm)", p[[2]]$data),
+				data.frame(predictor="Max*VPD[Y0]~(hPa)", p[[3]]$data),
+				data.frame(predictor="Delta[Y0-1]*Min*VPD~(hPa)", p[[4]]$data),
+				data.frame(predictor="Min*Temp[Y0]~(degree*C)", p[[5]]$data),
+				data.frame(predictor="Delta[Y0-1]*Max*Temp~(degree*C)", p[[6]]$data)
+				) |> mutate(predictor=factor(predictor, c("Delta[Y1-2]*PPT~(mm)", "Delta[Y0-1]*PPT~(mm)", "Max*VPD[Y0]~(hPa)", "Delta[Y0-1]*Min*VPD~(hPa)", "Min*Temp[Y0]~(degree*C)", "Delta[Y0-1]*Max*Temp~(degree*C)")))
 
-geom_tile(data=filter(jotr.hist.flowering, year%in%2008:2022), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
+partplot <- ggplot(partvals) + geom_ribbon(aes(x=x, ymin=q05, ymax=q95), fill="#41b6c4") + geom_line(aes(x=x, y=med), color="white") + facet_wrap("predictor", nrow=3, labeller="label_parsed", scale="free") + labs(y="Marginal Pr(Flowers)") + theme_minimal() + theme(axis.title.x=element_blank(), panel.spacing=unit(0.2,"in"))
 
-geom_point(data=filter(obs, year%in%2008:2022), aes(x=lon, y=lat, shape=flr, color=flr), size=0.75) + 
-scale_shape_manual(values=c(1,20), name="Flowers seen?") + 
-scale_color_manual(values=c("gray60", park_palette("JoshuaTree")[2]), name="Flowers seen?") +
 
-facet_wrap("year", nrow=3) + 
+{cairo_pdf("output/figures/Fig02_predictors_accuracy_partials.pdf", width=8, height=6)
 
-theme_minimal() + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.title=element_blank(), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6))
+ggdraw() + draw_plot(mod_varimp, 0, 0.53, 0.45, 0.44) + draw_plot(mod_accuracy, 0, 0, 0.45, 0.55) + draw_plot(partplot, 0.45, 0, 0.55, 1) + draw_plot_label(label=c("A", "B", "C"), x=c(0, 0, 0.45), y=c(1,0.55,1))
 
 }
 dev.off()
 
 
-# all years with observations, YUBR
-{cairo_pdf("output/figures/obs-vs-prediction_YUBR.pdf", width=9.5, height=7.5)
+# figure to do the above but with the two species separately -------------
 
-ggplot() + 
+# first YUJA 
+yuja.mod <- read_rds("output/BART/bart.model.yuja.rds")
+names(yuja.mod)
 
-geom_tile(data=filter(hist.flowering, year%in%2010:2022, type=="Western"), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
+yuja_obs_valid <- summary(yuja.mod)$data |> dplyr::select(fitted, observed) |> mutate(type="Training data")
+glimpse(yuja_obs_valid) 
 
-geom_point(data=filter(obs, type=="Western"), aes(x=lon, y=lat, shape=flr, color=flr), size=0.75) + 
-scale_shape_manual(values=c(1,20), name="Flowers seen?") + 
-scale_color_manual(values=c("gray60", park_palette("JoshuaTree")[2]), name="Flowers seen?") +
+yuja_exp_valid <- valid |> filter(type=="YUJA") |> dplyr::select(YUJA_prFlr, obs_flowers) |> rename(fitted=YUJA_prFlr, observed=obs_flowers) |> mutate(observed=as.numeric(observed), type="Validation records")
+glimpse(yuja_exp_valid)
 
-facet_wrap("year", nrow=3) + 
+yuja_accu <- rbind(yuja_obs_valid, yuja_exp_valid) |> mutate(type=factor(type, c("Training data", "Validation records")), classified=fitted>0.1589413)
 
-dark_mode(theme_minimal()) + theme(legend.position=c(0.85,0.2), legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.title=element_blank(), axis.text=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+# model accuracy figure
+yuja_accuracy <- ggplot(yuja_accu, aes(y=as.factor(observed), x=fitted)) + geom_vline(xintercept=0.16, linewidth=0.5, color="gray60") + geom_jitter(height=0.15, aes(fill=classified, color=classified, shape=classified, size=classified, alpha=classified)) + geom_boxplot(fill=NA, color="black", linewidth=0.5, shape=20, outlier.color=NA, width=0.5) + facet_wrap("type", nrow=2) + 
+
+annotate(geom="text", x=0.17, y=1.45, label="Classfication cutoff", hjust=0, color="gray40", size=3) +
+
+scale_y_discrete(labels=c("False", "True")) + labs(y="Flowers observed", x="Predicted Pr(Flowers)") +
+
+scale_fill_manual(values=c("#ffffcc", NA)) +
+scale_color_manual(values=c("gray60", "#253494")) +
+scale_shape_manual(values=c(21, 19)) + 
+scale_size_manual(values=c(1, 1.2)) + 
+scale_alpha_manual(values=c(0.75, 0.5)) + 
+
+labs(title="Model accuracy, YUJA") + theme_minimal(base_size=10) + theme(legend.position="none", plot.margin=unit(c(0.1,0.1,0.1,0.1),"in"), strip.text=element_text(size=10, hjust=0))
+
+yuja_accuracy
+
+yuja_p <- partial(yuja.mod, jotr.preds, trace=FALSE, smooth=5)
+
+yuja_partvals <- rbind(
+				data.frame(predictor="Delta[Y1-2]*PPT~(mm)", yuja_p[[1]]$data),
+				data.frame(predictor="Delta[Y0-1]*PPT~(mm)", yuja_p[[2]]$data),
+				data.frame(predictor="Max*VPD[Y0]~(hPa)", yuja_p[[3]]$data),
+				data.frame(predictor="Delta[Y0-1]*Min*VPD~(hPa)", yuja_p[[4]]$data),
+				data.frame(predictor="Min*Temp[Y0]~(degree*C)", yuja_p[[5]]$data),
+				data.frame(predictor="Delta[Y0-1]*Max*Temp~(degree*C)", yuja_p[[6]]$data)
+				) |> mutate(predictor=factor(predictor, c("Delta[Y1-2]*PPT~(mm)", "Delta[Y0-1]*PPT~(mm)", "Max*VPD[Y0]~(hPa)", "Delta[Y0-1]*Min*VPD~(hPa)", "Min*Temp[Y0]~(degree*C)", "Delta[Y0-1]*Max*Temp~(degree*C)")))
+
+yuja_partplot <- ggplot(yuja_partvals) + geom_ribbon(aes(x=x, ymin=q05, ymax=q95), fill="#41b6c4") + geom_line(aes(x=x, y=med), color="white") + facet_wrap("predictor", nrow=3, labeller="label_parsed", scale="free") + labs(y="Marginal Pr(Flowers)", title="Partial effects, YUJA") + theme_minimal() + theme(axis.title.x=element_blank(), panel.spacing=unit(0.2,"in"))
+
+yuja_partplot
+
+
+# now YUBR
+yubr.mod <- read_rds("output/BART/bart.model.yubr.rds")
+names(yubr.mod)
+
+yubr_obs_valid <- summary(yubr.mod)$data |> dplyr::select(fitted, observed) |> mutate(type="Training data")
+glimpse(yubr_obs_valid) 
+
+yubr_exp_valid <- valid |> filter(type=="YUBR") |> dplyr::select(YUBR_prFlr, obs_flowers) |> rename(fitted=YUBR_prFlr, observed=obs_flowers) |> mutate(observed=as.numeric(observed), type="Validation records")
+glimpse(yubr_exp_valid)
+
+yubr_accu <- rbind(yubr_obs_valid, yubr_exp_valid) |> mutate(type=factor(type, c("Training data", "Validation records")), classified=fitted>0.2776204)
+
+# model accuracy figure
+yubr_accuracy <- ggplot(yubr_accu, aes(y=as.factor(observed), x=fitted)) + geom_vline(xintercept=0.28, linewidth=0.5, color="gray60") + geom_jitter(height=0.15, aes(fill=classified, color=classified, shape=classified, size=classified, alpha=classified)) + geom_boxplot(fill=NA, color="black", linewidth=0.5, shape=20, outlier.color=NA, width=0.5) + facet_wrap("type", nrow=2) + 
+
+annotate(geom="text", x=0.29, y=1.45, label="Classfication cutoff", hjust=0, color="gray40", size=3) +
+
+scale_y_discrete(labels=c("False", "True")) + labs(y="Flowers observed", x="Predicted Pr(Flowers)") +
+
+scale_fill_manual(values=c("#ffffcc", NA)) +
+scale_color_manual(values=c("gray60", "#253494")) +
+scale_shape_manual(values=c(21, 19)) + 
+scale_size_manual(values=c(1, 1.2)) + 
+scale_alpha_manual(values=c(0.75, 0.5)) + 
+
+labs(title="Model accuracy, YUBR") + theme_minimal(base_size=10) + theme(legend.position="none", plot.margin=unit(c(0.1,0.1,0.1,0.1),"in"), strip.text=element_text(size=10, hjust=0))
+
+yubr_accuracy
+
+yubr_p <- partial(yubr.mod, jotr.preds, trace=FALSE, smooth=5)
+
+yubr_partvals <- rbind(
+				data.frame(predictor="Delta[Y1-2]*PPT~(mm)", yubr_p[[1]]$data),
+				data.frame(predictor="Delta[Y0-1]*PPT~(mm)", yubr_p[[2]]$data),
+				data.frame(predictor="Max*VPD[Y0]~(hPa)", yubr_p[[3]]$data),
+				data.frame(predictor="Delta[Y0-1]*Min*VPD~(hPa)", yubr_p[[4]]$data),
+				data.frame(predictor="Min*Temp[Y0]~(degree*C)", yubr_p[[5]]$data),
+				data.frame(predictor="Delta[Y0-1]*Max*Temp~(degree*C)", yubr_p[[6]]$data)
+				) |> mutate(predictor=factor(predictor, c("Delta[Y1-2]*PPT~(mm)", "Delta[Y0-1]*PPT~(mm)", "Max*VPD[Y0]~(hPa)", "Delta[Y0-1]*Min*VPD~(hPa)", "Min*Temp[Y0]~(degree*C)", "Delta[Y0-1]*Max*Temp~(degree*C)")))
+
+yubr_partplot <- ggplot(yubr_partvals) + geom_ribbon(aes(x=x, ymin=q05, ymax=q95), fill="#41b6c4") + geom_line(aes(x=x, y=med), color="white") + facet_wrap("predictor", nrow=3, labeller="label_parsed", scale="free") + labs(y="Marginal Pr(Flowers)", title="Partial effects, YUBR") + theme_minimal() + theme(axis.title.x=element_blank(), panel.spacing=unit(0.2,"in"))
+
+yubr_partplot
+
+
+{cairo_pdf("output/figures/SIFig_subspecies_accuracy_partials.pdf", width=6.5, height=8)
+
+ggdraw() + draw_plot(yubr_accuracy, 0, 0.6, 0.5, 0.4) + draw_plot(yuja_accuracy, 0.5, 0.6, 0.5, 0.4) + draw_plot(yubr_partplot, 0, 0, 0.5, 0.6) + draw_plot(yuja_partplot, 0.5, 0, 0.5, 0.6) + draw_plot_label(label=c("A", "B", "C", "D"), x=c(0, 0, 0.5, 0.5), y=c(1, 0.6, 1, 0.6))
 
 }
 dev.off()
 
-# all years with observations, YUJA
-{cairo_pdf("output/figures/obs-vs-prediction_YUJA.pdf", width=9.5, height=7.5)
 
-ggplot() + 
-
-geom_tile(data=filter(hist.flowering, year%in%2010:2022, type=="Eastern"), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.5)) + 
-
-geom_point(data=filter(obs, type=="Eastern"), aes(x=lon, y=lat, shape=flr, color=flr), size=0.75) + 
-scale_shape_manual(values=c(1,20), name="Flowers seen?") + 
-scale_color_manual(values=c("gray60", park_palette("JoshuaTree")[2]), name="Flowers seen?") +
-
-facet_wrap("year", nrow=3) + 
-
-dark_mode(theme_minimal()) + theme(legend.position=c(0.85,0.2), legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.title=element_blank(), axis.text=element_blank(), plot.margin=unit(c(0.5,0.1,0.75,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
-
-
-
-#-------------------------------------------------------------------------
-# Individual years
-
-# my birth year, LOL
-{cairo_pdf("output/figures/prediction_1982.pdf", width=6, height=5)
-
-ggplot() + 
-
-geom_tile(data=filter(jotr.hist.flowering, year==1982), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
-
-labs(x="Latitude", y="Longitude") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
-
-
-
-# year Joshua tree National Monument established
-{cairo_pdf("output/figures/prediction_1936.pdf", width=6, height=5)
-
-ggplot() + 
-
-geom_tile(data=filter(jotr.hist.flowering, year==1936), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
-
-labs(x="Latitude", y="Longitude") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
-
-# earliest year in reconstruction
-{cairo_pdf("output/figures/prediction_1900.pdf", width=6, height=5)
-
-ggplot() + 
-
-geom_tile(data=filter(jotr.hist.flowering, year==1900), aes(x=lon, y=lat, fill=prFL)) + scale_fill_distiller(type="seq", palette=2, direction=1, name="Pr(flowers)", limits=c(0,1), breaks=seq(0,1,0.2)) + 
-
-labs(x="Latitude", y="Longitude") +
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
 
 
 #-------------------------------------------------------------------------
@@ -399,6 +446,8 @@ dev.off()
 cellcors <- jotr.hist.flowering %>% group_by(lon,lat) %>% do(broom::tidy(cor.test(~prFL+year, data=., method="spearman"))) %>% ungroup() # rangewide model
 
 glimpse(cellcors)
+
+quantile(cellcors$estimate, c(0.05, 0.5, 0.975))
 
 {cairo_pdf("output/figures/prFL-vs-time_correlations_jotr.pdf", width=3, height=2.5)
 
@@ -413,108 +462,52 @@ scale_color_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
 
 geom_vline(xintercept=0) +
 
-labs(x=expression("Spearman's"~rho), y="Grid cells") + dark_mode(theme_minimal()) + theme(legend.position="none", plot.background=element_rect(color="black", fill="black"), plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
+labs(x=expression("Spearman's"~rho), y="Grid cells") + theme_minimal() + theme(legend.position="none", plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
 
 }
 dev.off()
 
-# Plot it on a map
-{cairo_pdf("output/figures/prFL-vs-time_map_jotr.pdf", width=6, height=5)
+cellcorsRI <- jotr.hist.flowering %>% group_by(lon,lat) %>% do(broom::tidy(cor.test(~RI.prFL+year, data=., method="spearman"))) %>% ungroup() # rangewide model
 
-ggplot(cellcors, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
+glimpse(cellcorsRI)
 
-#coord_fixed() + 
+{cairo_pdf("output/figures/RI.prFL-vs-time_correlations_jotr.pdf", width=3, height=2.5)
 
-scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho~", Pr(flowers) vs. time")) + labs(x="Longitude", y="Latitude") + 
+ggplot(cellcorsRI, aes(x=estimate, fill=p.value<=0.01, color=p.value<=0.01)) + geom_histogram(color=NA) + 
 
-theme_minimal() + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6))
+scale_fill_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
+scale_color_manual(values=park_palette("JoshuaTree")[c(7, 2)]) +
 
-}
-dev.off()
+#annotate("text", x=0.1, y=150, label="All cells", color=park_palette("JoshuaTree")[7], fontface="bold", family="Arial Narrow") + 
 
-# trends within single cells
+#annotate("text", x=-0.15, y=50, label="Cells with\ncorrelation\np < 0.01", color=park_palette("JoshuaTree")[2], fontface="bold", family="Arial Narrow", lineheight=0.8) + 
 
-declining <- cellcors %>% filter(p.value < 0.01, estimate < 0) # NONE
-increasing <- cellcors %>% filter(p.value < 0.01, estimate > 0) 
-stable <- cellcors %>% filter(estimate > -0.05, estimate < 0.05) 
+geom_vline(xintercept=0) +
 
-
-# map with example points highlighted
-{cairo_pdf("output/figures/prFL-vs-time_map_jotr_examples.pdf", width=6, height=5)
-
-ggplot(cellcors, aes(x=lon, y=lat, fill=estimate)) + geom_tile() + 
-
-#coord_fixed() + 
-
-geom_point(x=declining$lon[1], y=declining$lat[1], pch=21, color=park_palette("JoshuaTree")[2]) + 
-geom_point(x=increasing$lon[1], y=increasing$lat[1], pch=21, color=park_palette("JoshuaTree")[2]) + 
-geom_point(x=stable$lon[1], y=stable$lat[1], pch=21, color=park_palette("JoshuaTree")[2]) + 
-
-scale_fill_distiller(type="div", palette=1, direction=1, name=expression("Spearman's"~rho~", Pr(flowers) vs. time")) + labs(x="Longitude", y="Latitude") + 
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
+labs(x=expression("Spearman's"~rho), y="Grid cells") + theme_minimal() + theme(legend.position="none", plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
 
 }
 dev.off()
 
-
-{cairo_pdf("output/figures/flowering_decline_example.pdf", width=4, height=3.5)
-
-ggplot(filter(jotr.hist.flowering, lat == declining$lat[1], lon == declining$lon[1]), aes(x=year, y=prFL, color=prFL>0.24)) + geom_point() + geom_smooth(method="lm", color="#a6611a") +
-
-scale_color_manual(values=c("white", "#80cdc1"), guide="none") + 
-
-labs(x="Year", y="Predicted Pr(flowers)") +
-
-dark_mode(theme_bw())
-
-}
-dev.off()
-
-{cairo_pdf("output/figures/flowering_increase_example.pdf", width=4, height=3.5)
-
-ggplot(filter(jotr.hist.flowering, lat == increasing$lat[1], lon == increasing$lon[1]), aes(x=year, y=prFL, color=prFL>0.24)) + geom_point() + geom_smooth(method="lm", color="#018571") +
-
-scale_color_manual(values=c("white", "#80cdc1"), guide="none") + 
-
-labs(x="Year", y="Predicted Pr(flowers)") +
-
-dark_mode(theme_bw())
-
-}
-dev.off()
-
-{cairo_pdf("output/figures/flowering_stable_example.pdf", width=4, height=3.5)
-
-ggplot(filter(jotr.hist.flowering, lat == stable$lat[1], lon == stable$lon[1]), aes(x=year, y=prFL, color=prFL>0.24)) + geom_point() + geom_smooth(method="lm", color="white") +
-
-scale_color_manual(values=c("white", "#80cdc1"), guide="none") + 
-
-labs(x="Year", y="Predicted Pr(flowers)") +
-
-dark_mode(theme_bw())
-
-}
-dev.off()
 
 #-------------------------------------------------------------------------
 # Flowering years
 
 # best-power prediction thresholds from the original models
-# jotr: 0.24
-# jotr with RI: 0.21
+# jotr: 0.26
+# jotr with RI: 0.25
 
 # YUBR: 0.30
 # YUJA: 0.23
 
 flyrs.jotr <- jotr.hist.flowering %>% group_by(lon,lat) %>% 
 summarize(
-	flyrs_all=length(which(prFL>=0.24)), 
-	flyrs_1900_1929=length(which(prFL>=0.24 & year<=1929)), 
-	flyrs_1990_2019=length(which(prFL>=0.24 & year>=1990 & year<=2019)),
-	flyrs_RI_all=length(which(RI.prFL>=0.21)), 
-	flyrs_RI_1900_1929=length(which(RI.prFL>=0.21 & year<=1929)), 
-	flyrs_RI_1990_2019=length(which(RI.prFL>=0.21 & year>=1990 & year<=2019)),
+	flyrs_all=length(which(prFL>=0.26)), 
+	flyrs_1900_1929=length(which(prFL>=0.26 & year<=1929)), 
+	flyrs_1990_2019=length(which(prFL>=0.26 & year>=1990 & year<=2019)),
+	flyrs_RI_all=length(which(RI.prFL>=0.25)), 
+	flyrs_RI_1900_1929=length(which(RI.prFL>=0.25 & year<=1929)), 
+	flyrs_RI_1990_2019=length(which(RI.prFL>=0.25 & year>=1990 & year<=2019)),
 	) |> mutate(
 	flyrs_change=flyrs_1990_2019-flyrs_1900_1929,
 	flyrs_RI_change=flyrs_RI_1990_2019-flyrs_RI_1900_1929
@@ -523,21 +516,26 @@ range(jotr.hist.flowering$year) # remember: 1900-2022
 glimpse(flyrs.jotr)
 
 write.table(flyrs.jotr, "output/jotr_reconstructed_flowering_years.csv", sep=",", col.names=TRUE, row.names=FALSE)
-
+# flyrs.jotr <- read.csv("output/jotr_reconstructed_flowering_years.csv")
 
 # without RI
 quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))
-quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))/123 # median 0.26
+quantile(flyrs.jotr$flyrs_all, c(0.025,0.5,0.975))/123 # median 0.30
 
-quantile(flyrs.jotr$flyrs_1900_1929, c(0.025,0.5,0.975))/30 # median 0.23
-quantile(flyrs.jotr$flyrs_1990_2019, c(0.025,0.5,0.975))/30 # median 0.30
+quantile(flyrs.jotr$flyrs_1900_1929, c(0.025,0.5,0.975))/30 # median 0.27
+quantile(flyrs.jotr$flyrs_1990_2019, c(0.025,0.5,0.975))/30 # median 0.33
+
+quantile(flyrs.jotr$flyrs_change, c(0.025,0.5,0.975)) # median 2
+
 
 # with RI
 quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))
-quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))/123 # median 0.34 (!)
+quantile(flyrs.jotr$flyrs_RI_all, c(0.025,0.5,0.975))/123 # median 0.24 (!)
 
-quantile(flyrs.jotr$flyrs_RI_1900_1929, c(0.025,0.5,0.975))/30 # median 0.37
-quantile(flyrs.jotr$flyrs_RI_1990_2019, c(0.025,0.5,0.975))/30 #  median 0.37
+quantile(flyrs.jotr$flyrs_RI_1900_1929, c(0.025,0.5,0.975))/30 # median 0.23
+quantile(flyrs.jotr$flyrs_RI_1990_2019, c(0.025,0.5,0.975))/30 #  median 0.23 ohhh fascinating
+
+quantile(flyrs.jotr$flyrs_RI_change, c(0.025,0.5,0.975)) # median 1
 
 
 ggplot(flyrs.jotr, aes(x=flyrs_1900_1929)) + geom_histogram(bins=30)
@@ -550,7 +548,18 @@ ggplot(flyrs.jotr, aes(x=flyrs_all)) + geom_histogram(fill="#ccece6") + labs(x="
 
 geom_vline(xintercept=median(flyrs.jotr$flyrs_all), color="#006d2c") +
 
-dark_mode(theme_minimal()) + theme(legend.position="none", plot.background=element_rect(color="black", fill="black"), plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
+theme_minimal() + theme(legend.position="none", plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
+
+}
+dev.off()
+
+{cairo_pdf("output/figures/RI_flowering-years_jotr.pdf", width=3.5, height=2.5)
+
+ggplot(flyrs.jotr, aes(x=flyrs_RI_all)) + geom_histogram(fill="#ccece6") + labs(x="Projected flowering years, 1900-2022", y="Grid cells") + 
+
+geom_vline(xintercept=median(flyrs.jotr$flyrs_RI_all), color="#006d2c") +
+
+theme_minimal() + theme(legend.position="none", plot.margin=margin(0.1,0.15,0.1,0.15, "inches"))
 
 }
 dev.off()
@@ -570,70 +579,135 @@ theme_minimal() + theme(legend.position="bottom", legend.key.width=unit(0.15, "i
 }
 dev.off()
 
-# Change in flowering years, mapped
-{cairo_pdf("output/figures/flyrs_change_map_jotr.pdf", width=6, height=5)
-
-ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs_1990_2019-flyrs_1900_1929)) + geom_tile() + 
-
-#coord_fixed() + 
-
-scale_fill_distiller(type="div", palette=1, direction=1, name="Change in flowering years") + labs(x="Longitude", y="Latitude", title="Change in flowering years, 1990-2019 vs 1900-1929") + 
-
-theme_minimal() + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6))
-
-}
-dev.off()
-
-{cairo_pdf("output/figures/RI_flyrs_map_jotr.pdf", width=6, height=5)
-
-ggplot(flyrs.jotr, aes(x=lon, y=lat, fill=flyrs_RI_all)) + geom_tile() + 
-
-#coord_fixed() + 
-
-scale_fill_distiller(type="seq", palette=2, direction=1, name="Years flowering predicted") + labs(x="Longitude", y="Latitude", title="Predicted flowering years, 1900-2022") + 
-
-dark_mode(theme_minimal()) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.15, "inches"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.2,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), plot.background=element_rect(color="black", fill="black"))
-
-}
-dev.off()
-
-
 #-------------------------------------------------------------------------
-# rangewide trends
+# Change in flowering years, trends in key predictors
 
-# make this usable ...
-sub.hist.flowering <- hist.flowering %>% group_by(year) %>% slice_sample(prop=0.05) 
+ggplot(flyrs.jotr, aes(x=flyrs_1990_2019-flyrs_1900_1929)) + geom_histogram(bins=20)
+ggplot(flyrs.jotr, aes(x=flyrs_RI_1990_2019-flyrs_RI_1900_1929)) + geom_histogram(bins=20)
 
-# with points
-{png("output/figures/prFL-vs-time.png", width=1400, height=800)
+DelFlyrs <- flyrs.jotr |> mutate(FlyrsBase = flyrs_1990_2019-flyrs_1900_1929, FlyrsRI = flyrs_RI_1990_2019-flyrs_RI_1900_1929) |> dplyr::select(lon, lat, FlyrsBase, FlyrsRI) |> pivot_longer(contains("Flyrs"), names_to="model", values_to="FlyrsChange") |> mutate(model=factor(model, c("FlyrsBase", "FlyrsRI")))
 
-ggplot(sub.hist.flowering, aes(x=year, y=prFL)) + geom_jitter(alpha=0.2, color=park_palette("JoshuaTree")[7]) + geom_smooth(method="loess", color=park_palette("JoshuaTree")[7]) + labs(x="Year", y="Flowering probability") + dark_mode(theme_ipsum(base_size=30, axis_title_size=36)) + theme(plot.background=element_rect(color="black")) # weeee
+levels(DelFlyrs$model) <- c("Base Model", "RI Model")
+
+
+# map context
+states <- read_sf(dsn = "../data/spatial/10m_cultural/", lay= "ne_10m_admin_1_states_provinces")
+coast <- read_sf("../data/spatial/10m_physical/ne_10m_coastline", "ne_10m_coastline")
+
+
+# change in flowering years, baseline and RI model
+flyrsChange <- ggplot() + 
+	geom_sf(data=coast, color="slategray2", linewidth=2.5) + 
+	geom_sf(data=states, fill="cornsilk3", color="antiquewhite4") + 
+	
+	geom_tile(data=DelFlyrs, aes(x=lon, y=lat, fill=FlyrsChange)) + 
+	
+	scale_fill_distiller(type="div", palette="PRGn", direction=1, name="Change in flowering years,\n1990-2019 vs 1900-1929") + labs(x="Longitude", y="Latitude") + 
+	
+	facet_wrap("model", nrow=2) +
+	
+	coord_sf(xlim = c(-119, -112.5), ylim = c(33.55, 37.75), expand = FALSE) +
+	theme_minimal(base_size=8) + theme(legend.position="bottom", legend.key.width=unit(0.15, "inches"), legend.key.height=unit(0.1, "in"), axis.text=element_blank(), axis.title=element_blank(), plot.margin=unit(c(0.1,0.1,0.1,0.1), "inches"), panel.spacing=unit(0.1,"inches"), legend.spacing.y=unit(0.1,"inches"), legend.box="horizontal", legend.text=element_text(size=6), legend.title=element_text(size=8), strip.text=element_text(size=10), panel.background=element_rect(fill="slategray3", color="black"), panel.grid=element_blank())
+
+flyrsChange
+
+
+# change in predictors .................................
+sample_sites <- flyrs.jotr |> dplyr::select(lat, lon)
+
+sample_predictor_history <- data.frame(matrix(0,0,3+length(jotr.preds)))
+names(sample_predictor_history) <- c("lat", "lon", "year", jotr.preds)
+
+for(yr in 1900:2022){ # loop over years
+
+sample_predictor_history <- rbind(sample_predictor_history, data.frame(sample_sites,year=yr, raster::extract(brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri",sep="")), sample_sites[,c("lon","lat")])[,jotr.preds]))
+
+}
+
+# now compile trends ...
+pred_history_long <- sample_predictor_history |> pivot_longer(all_of(jotr.preds), names_to="predictor", values_to="value") |> mutate(predictor = factor(predictor, jotr.preds))
+
+levels(pred_history_long$predictor) <- c("Delta[Y1-2]*PPT~(mm)", "Delta[Y0-1]*PPT~(mm)", "Max*VPD[Y0]~(hPa)", "Delta[Y0-1]*Min*VPD~(hPa)", "Min*Temp[Y0]~(degree*C)", "Delta[Y0-1]*Max*Temp~(degree*C)")
+
+
+# change in MEAN from 1900-1929 to 1990-2019
+predictor_mean_early <- pred_history_long |> filter(year%in%1900:1929) |> group_by(lat, lon, predictor) |> summarize(mean_1900_1929=mean(value))
+
+predictor_mean_late <- pred_history_long |> filter(year%in%1990:2019) |> group_by(lat, lon, predictor) |> summarize(mean_1990_2019=mean(value))
+
+predictor_mean_change <- full_join(predictor_mean_early, predictor_mean_late) |> mutate(mean_change=mean_1990_2019-mean_1900_1929) |> pivot_longer(starts_with("mean"), values_to="value", names_to="mean_stat")
+glimpse(predictor_mean_change)
+
+# BART predictor change in means
+pred_change <- ggplot(filter(predictor_mean_change, mean_stat!="mean_change"), aes(x=value, fill=mean_stat)) + geom_histogram(position="dodge") + facet_wrap("predictor", scale="free", labeller="label_parsed", nrow=3) + 
+
+scale_fill_manual(values=park_palette("JoshuaTree")[c(1,2)], labels=c("1900-1929", "1990-2019"), name="Mean for") + 
+
+labs(y="Grid cells", x="Mean value") + theme_minimal(base_size=9) + theme(legend.position="bottom", legend.key.size=unit(0.1, "in")) 
+
+
+
+# change in flowering years vs other factors ...
+glimpse(flyrs.jotr)
+
+jotr.flr.change <- cbind(flyrs.jotr, raster::extract(raster("../data/Yucca/ybrev_elev.grd"), flyrs.jotr[,c("lon","lat")])) 
+colnames(jotr.flr.change)[11] <- "elev_m"
+
+glimpse(jotr.flr.change)
+
+cor.test(~flyrs_change+lat, data=jotr.flr.change, method="sp")
+cor.test(~flyrs_RI_change+lat, data=jotr.flr.change, method="sp") # huh
+
+cor.test(~flyrs_change+elev_m, data=jotr.flr.change, method="sp")
+cor.test(~flyrs_RI_change+elev_m, data=jotr.flr.change, method="sp") # okay, largely aligned here
+
+
+# paired predictor and flowering year change ...............
+predictor_change <- predictor_mean_change |> mutate(mean_stat = factor(mean_stat, levels=c("mean_1900_1929", "mean_1990_2019", "mean_change"))) |> rename(timeframe=mean_stat, pred_value=value)
+levels(predictor_change$timeframe) <- c("from_1900_1929", "from_1990_2019", "change")
+
+flyrs_change <- flyrs.jotr |> pivot_longer(starts_with("flyrs_"), names_to="timeframe", values_to="flyrs") |> mutate(ri.model=grepl("RI", timeframe)) 
+
+flyrs_change$timeframe[grepl("change", flyrs_change$timeframe)] <- "change"
+flyrs_change$timeframe[grepl("1900_1929", flyrs_change$timeframe)] <- "from_1900_1929"
+flyrs_change$timeframe[grepl("1990_2019", flyrs_change$timeframe)] <- "from_1990_2019"
+flyrs_change$timeframe[grepl("all", flyrs_change$timeframe)] <- "from_all"
+table(flyrs_change$timeframe)
+table(predictor_change$timeframe)
+
+flyrs_pred_change <- flyrs_change |> filter(timeframe!="from_all") |> mutate(timeframe=factor(timeframe, c("from_1900_1929", "from_1990_2019", "change"))) |> left_join(predictor_change)
+
+glimpse(flyrs_pred_change)
+table(flyrs_pred_change$timeframe)
+
+write.table(flyrs_pred_change, "output/jotr_flowering_predictors_change.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+# flyrs_pred_change <- read.csv("output/jotr_flowering_predictors_change.csv") |> mutate(predictor = factor(predictor, c("Delta[Y1-2]*PPT~(mm)", "Delta[Y0-1]*PPT~(mm)", "Max*VPD[Y0]~(hPa)", "Delta[Y0-1]*Min*VPD~(hPa)", "Min*Temp[Y0]~(degree*C)", "Delta[Y0-1]*Max*Temp~(degree*C)")))
+
+ggplot(jotr.flr.change, aes(x=elev_m, y=flyrs_change)) + geom_point(alpha=0.2) + geom_smooth(method="lm")
+
+
+# BART predictor change vs flowering changes
+
+plot_slice <- filter(flyrs_pred_change, timeframe!="change", !ri.model) |> group_by(timeframe, predictor, ri.model) |> slice_sample(n=300)
+
+plot_slice_summ <- plot_slice |> group_by(timeframe, predictor) |> summarize(med_pred = median(pred_value), med_flyrs = median(flyrs)) |> pivot_wider(names_from=timeframe, values_from=c(med_pred, med_flyrs))
+
+
+pred_flr_change <- ggplot(plot_slice, aes(x=pred_value, y=flyrs, color=timeframe)) + geom_point(alpha=0.25, size=1.25) + geom_segment(data=plot_slice_summ, aes(x = med_pred_from_1900_1929, y = med_flyrs_from_1900_1929, xend = med_pred_from_1990_2019, yend = med_flyrs_from_1990_2019), arrow = arrow(length = unit(0.15, "cm")), color="black") +
+
+facet_wrap("predictor", scale="free", labeller="label_parsed", nrow=3) + 
+
+scale_color_manual(values=c("#0571b0","#e66101"), labels=c("1900-1929", "1990-2019"), name="Value for") + 
+
+labs(y="Flowering years predicted by base model", x="Mean predictor value") + theme_minimal(base_size=9) + theme(legend.position="bottom", legend.key.size=unit(0.1, "in"))
+
+
+# write out composite figure
+
+{cairo_pdf(file="output/figures/Fig04_flyrs_predictors_change.pdf", width=6, height=5)
+
+ggdraw() + draw_plot(flyrsChange, 0, 0, 0.44, 1) + draw_plot(pred_flr_change, 0.43, 0, 0.53, 1) + draw_plot_label(label=c("A", "B"), x=c(0,0.43), y=1)
 
 }
 dev.off()
-
-# try this ...
-
-{cairo_pdf("output/figures/prFL-vs-time_hex.pdf", width=5, height=4)
-
-ggplot(sub.hist.flowering, aes(x=year, y=prFL)) + geom_hex() + geom_hline(yintercept=median(filter(sub.hist.flowering, year<1930)$prFL), linetype=2) + geom_smooth(method="loess", span=0.75, color=park_palette("JoshuaTree")[5], se=FALSE) + annotate("text", x=2021, y=1.05*median(filter(sub.hist.flowering, year<1930)$prFL), label="Median, 1900-1929", hjust=1, vjust=0, size=3) + scale_fill_gradient(low="gray95", high=park_palette("JoshuaTree")[5]) + labs(x="Year", y="Probability of flowering") + theme_ipsum() + theme(legend.position="none")
-
-}
-dev.off()
-
-
-# summarize ...
-sum.hist.flowering <- hist.flowering %>% group_by(year) %>% summarize(mdPrFL = median(prFL), lo50PrFL = quantile(prFL, 0.25), up50PrFL = quantile(prFL, 0.75), lo95PrFL = quantile(prFL, 0.025), up95PrFL = quantile(prFL, 0.975))
-
-{cairo_pdf("output/figures/prFL-vs-time_linerange.pdf", width=6.5, height=3.5)
-
-ggplot() + geom_linerange(data=sum.hist.flowering, aes(x=year, ymin=lo95PrFL, ymax=up95PrFL), color=park_palette("JoshuaTree")[5]) + geom_linerange(data=sum.hist.flowering, aes(x=year, ymin=lo50PrFL, ymax=up50PrFL), color=park_palette("JoshuaTree")[5], lwd=1) + geom_point(data=sum.hist.flowering, aes(x=year, y=mdPrFL), color="white", shape="-", size=2) +
-
-geom_hline(yintercept=median(filter(hist.flowering, year<1930)$prFL), linetype=2) + geom_smooth(data=sub.hist.flowering, aes(x=year, y=prFL), method="loess", span=0.5, color=park_palette("JoshuaTree")[6], se=FALSE) + annotate("text", x=2021, y=1.05*median(filter(sub.hist.flowering, year<1930)$prFL), label="Median, 1900-1929", hjust=1, vjust=0, size=3) +
-
-labs(x="Year", y="Probability of flowering") + dark_mode(theme_ipsum()) + theme(legend.position="none", plot.background=element_rect(color="black"))
-
-}
-dev.off()
-
-

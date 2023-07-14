@@ -1,6 +1,6 @@
 # working with phenology-annotated iNat observations
 # Assumes MAJEL environment 
-# jby 2023.03.31
+# jby 2023.04.02
 
 # starting up ------------------------------------------------------------
 
@@ -76,8 +76,13 @@ outno <- NULL
 
 }
 
+# make positive observations overwrite negative, if duplicated (drop the filter to keep both)
+outall <- rbind(outyes, outno) |> filter(!(duplicated(paste(lon, lat)) &flr==FALSE))
+
+which(duplicated(paste(outall$lon, outall$lat)))
+
 # put it al together
-flowering <- rbind(flowering, outyes, outno)
+flowering <- rbind(flowering, outall)
 
 } # END loop over years
 
@@ -132,7 +137,7 @@ flsub <- cbind(flsub, raster::extract(preds, flsub[,c("lon","lat")], df=FALSE))
 
 flr.clim <- rbind(flr.clim,flsub) 
 
-write.table(flr.clim, "output/flowering_obs_climate_v2_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
+write.table(flr.clim, "output/flowering_obs_climate_subsp.csv", sep=",", col.names=TRUE, row.names=FALSE)
 
 } # END LOOP over years
 
