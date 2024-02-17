@@ -1,6 +1,6 @@
 # working with phenology-annotated iNat observations
 # Assumes MAJEL environment 
-# jby 2023.04.02
+# jby 2024.01.22
 
 # starting up ------------------------------------------------------------
 
@@ -14,7 +14,7 @@ library("raster")
 library("sf")
 
 # Mojave crop extent (deliberately generous)
-MojExt <- extent(-119, -112, 33, 38)
+MojExt <- extent(-119, -112, 33, 40)
 
 #-------------------------------------------------------------------------
 # read in iNat observations compiled using inat_phenology_obs.R
@@ -88,6 +88,7 @@ flowering <- rbind(flowering, outall)
 
 head(flowering) # oh right we've lost type
 glimpse(flowering)
+filter(flowering, year >= 2008) %>% glimpse()
 table(flowering$year)
 
 # separate (sub)species again
@@ -142,8 +143,12 @@ write.table(flr.clim, "output/flowering_obs_climate_subsp.csv", sep=",", col.nam
 } # END LOOP over years
 
 glimpse(flr.clim)
+filter(flr.clim, year>=2008) %>% glimpse()
 table(flr.clim$type, useNA="ifany")
+table(filter(flr.clim, year>=2008)$type, useNA="ifany")
+
 table(flr.clim$year, useNA="ifany")
+table(filter(flr.clim, year>=2008)$year, useNA="ifany")
 
 # and that's generated a data file we can feed into Embarcadero ... in the next script!
 

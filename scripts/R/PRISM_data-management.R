@@ -1,6 +1,6 @@
 # working with PRISM historical monthlys
 # Assumes MAJEL environment 
-# jby 2023.03.28
+# jby 2024.02.16
 
 # starting up ------------------------------------------------------------
 
@@ -19,7 +19,7 @@ if(!dir.exists("data/PRISM")) dir.create("data/PRISM")
 prism_set_dl_dir("data/PRISM")
 
 # Mojave crop extent (deliberately generous)
-MojExt <- extent(-119, -112, 33, 38)
+MojExt <- extent(-119, -112, 33, 40)
 
 
 #-------------------------------------------------------------------------
@@ -32,7 +32,7 @@ if(!dir.exists("data/PRISM/annual")) dir.create("data/PRISM/annual")
 # FOR LOOP each year in PRISM
 for(yr in 1895:2021){
 
-# yr=2021
+# yr=2023
 
 get_prism_monthlys(type="tmax", mon=1:12, year=yr, keepZip=FALSE)
 get_prism_monthlys(type="tmin", mon=1:12, year=yr, keepZip=FALSE)
@@ -193,9 +193,9 @@ if(!dir.exists("data/PRISM/derived_predictors")) dir.create("data/PRISM/derived_
 # nb, because retrospective, can't do all the way back to 1895
 rast_ref <- raster("data/PRISM/annual/ppt_Mojave_2015Q1.bil") # standard to resample against, because WTF
 
-for(yr in 2020:2022){
+for(yr in 1900:2022){
 
-# yr <- 1900
+# yr <- 2023
 
 # ppt, all summarized
 pptY0 <- calc(brick(lapply(c(paste("data/PRISM/annual/ppt_Mojave_",yr,"Q1.bil", sep=""), paste("data/PRISM/annual/ppt_Mojave_",yr-1,"Q",4:2,".bil", sep="")), function(x) resample(raster(x), rast_ref))),sum) # borked in 2021
@@ -244,3 +244,88 @@ writeRaster(preds, paste("data/PRISM/derived_predictors/PRISM_derived_predictors
 
 } # and now each year has the predictor set stashed as a multilayer raster, cool
 
+
+#-------------------------------------------------------------------------
+# summarize predictors, for SI
+
+library("sf")
+
+sdm.pres <- read_sf("../data/Yucca/Jotr_SDM2023_range/Jotr_SDM2023_range.shp")
+sdm.buff <- st_buffer(st_transform(sdm.pres[,2], crs=3857), 1000) # put a 1km buffer on the range polygons
+
+
+jotr.maskHist <- mask(jotr.histStack, st_transform(sdm.buff, crs=4269), touches=TRUE)
+
+# this may take a moment ...
+predsComp <- rbind(
+		cbind(year=2008, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2008.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2009, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2009.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2010, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2010.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2011, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2011.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2012, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2012.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2013, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2013.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2014, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2014.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2015, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2015.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2016, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2016.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2017, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2017.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2018, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2018.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2019, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2019.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2020, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2020.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2021, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2021.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0))),
+		cbind(year=2022, as.data.frame(mask(stack("data/PRISM/derived_predictors/PRISM_derived_predictors_2022.grd"), st_transform(sdm.buff, crs=4269), touches=TRUE)) %>% filter(!is.na(pptY0)))
+		)
+
+write.table(predsComp, "output/derived_predictors_jtrange.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+preds.ln <- predsComp %>% pivot_longer(all_of(c("pptY0", "pptY1", "pptY2", "pptY0Y1", "pptY1Y2", "tmaxY0", "tmaxY1", "tmaxY2", "tmaxY0Y1", "tmaxY1Y2", "tminY0", "tminY1", "tminY2", "tminY0Y1", "tminY1Y2", "vpdmaxY0", "vpdmaxY1", "vpdmaxY2", "vpdmaxY0Y1", "vpdmaxY1Y2", "vpdminY0", "vpdminY1", "vpdminY2", "vpdminY0Y1", "vpdminY1Y2")), names_to="predictor", values_to="value")
+
+glimpse(preds.ln)
+
+# now a summary figure?
+xnames <- c("pptY0", "pptY1", "pptY2", "pptY0Y1", "pptY1Y2", "tmaxY0", "tmaxY0Y1", "tminY0", "tminY0Y1", "vpdmaxY0", "vpdmaxY0Y1", "vpdminY0", "vpdminY0Y1")
+
+# c("Delta[Y1-2]*PPT", "Delta[Y0-1]*PPT", "Max*VPD[Y0]", "Delta[Y0-1]*Min*VPD", "Min*Temp[Y0]", "Delta[Y0-1]*Max*Temp", "PPT[Y0]", "PPT[Y1]", "Min*VPD[Y0]", "Delta[Y0-1]*Max*VPD", "Max*Temp[Y0]", "PPT[Y2]", "Delta[Y0-1]*Min*Temp")
+
+# or a figure?
+jotr.preds <- c("pptY1Y2", "pptY0Y1", "vpdmaxY0", "vpdminY0Y1", "tminY0", "tmaxY0Y1")
+
+preds.fig <- filter(preds.ln, predictor%in%jotr.preds)
+preds.fig$predictor[preds.fig$predictor=="pptY1Y2"] <- "Delta[Y1-2]*PPT"
+preds.fig$predictor[preds.fig$predictor=="pptY0Y1"] <- "Delta[Y0-1]*PPT"
+preds.fig$predictor[preds.fig$predictor=="vpdmaxY0"] <- "Max*VPD[Y0]"
+preds.fig$predictor[preds.fig$predictor=="vpdminY0Y1"] <- "Delta[Y0-1]*Min*VPD"
+preds.fig$predictor[preds.fig$predictor=="tminY0"] <- "Min*Temp[Y0]"
+preds.fig$predictor[preds.fig$predictor=="tmaxY0Y1"] <- "Delta[Y0-1]*Max*Temp"
+
+preds.fig$predictor <- as.factor(preds.fig$predictor, c("Delta[Y1-2]*PPT", "Delta[Y0-1]*PPT", "Max*VPD[Y0]", "Delta[Y0-1]*Min*VPD", "Min*Temp[Y0]", "Delta[Y0-1]*Max*Temp"))
+
+{cairo_pdf("output/figures/SI_predictors.pdf", width=6.5, height=6)
+
+ggplot(preds.fig, aes(x=year, y=value, group=year)) + geom_boxplot(outlier.alpha=0.5, outlier.size=0.5) + 
+
+facet_wrap("predictor", scale="free_y", ncol=2, labeller="label_parsed") +
+
+labs(y="Predictor value", x="Year") +
+
+theme_bw()
+
+}
+dev.off()
+
+# maybe a summary table?
+preds.ln %>% filter(predictor %in% xnames) %>% group_by(predictor, year) %>% summarize(mn.annual = mean(value)) %>% group_by(predictor) %>% summarize(mnPred = mean(mn.annual), st.error = sd(mn.annual)/sqrt(15))
+
+
+# and in training data specifically
+
+flow <- read.csv("output/flowering_obs_climate_subsp.csv") # flowering/not flowering, biologically-informed candidate predictors, subspecies id'd
+
+dim(flow)
+glimpse(flow)
+
+
+# variant datasets -- dealing with the second flowering in 2018
+flow2 <- flow %>% filter(!(year==2018.5 & flr==TRUE), year>=2008, year<2023) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
+glimpse(flow2) # 2,632 in our final working set
+
+flow2 %>% dplyr::select(lat, lon, year, all_of(xnames)) %>% pivot_longer(all_of(xnames), names_to="predictor", values_to="value") %>% group_by(predictor, year) %>% summarize(mn.annual = mean(value)) %>% group_by(predictor) %>% summarize(mnPred = mean(mn.annual), st.error = sd(mn.annual)/sqrt(15))

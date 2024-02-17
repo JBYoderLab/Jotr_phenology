@@ -1,6 +1,6 @@
 # Scraping phenology-annotated iNat observations
 # Assumes local environment 
-# jby 2023.03.11
+# jby 2024.01.22
 
 # starting up ------------------------------------------------------------
 
@@ -37,7 +37,7 @@ years <- 1980:2022 # to run everything (best-confidence models are based on 2008
 # n.b. for-looping this borks up in a way that makes me suspect it's overloading the API
 for(y in years){
 
-# y <- 2022
+# y <- 2023
 
 bud.y <- try(get_inat_obs(quality="research", place_id=53170, taxon_id=47785, term_id=12, term_value_id=15, year=y, maxresults=1e4))
 Sys.sleep(5) # throttling under the API limit, maybe?
@@ -68,6 +68,7 @@ write.table(inat_pheno_data, "data/inat_phenology_data.csv", sep=",", col.names=
 
 # expect error messages if searches return zero obs with a given phenology status; this may not be a problem, but see what the final data table looks like
 glimpse(inat_pheno_data)
+filter(inat_pheno_data, year>=2008) %>% glimpse()
 table(inat_pheno_data$year, inat_pheno_data$phenology)
 
 
@@ -151,6 +152,8 @@ inat_pheno_data <- read.csv("data/inat_phenology_data.csv", h=TRUE)
 
 flr.raw.ln <- table(inat_pheno_data$year, inat_pheno_data$phenology) %>% as.data.frame() %>% rename(year=Var1, phenology=Var2, observations=Freq)
 
+glimpse(flr.raw.ln)
+
 source("../shared/Rscripts/base_graphics.R")
 library("ggdark")
 
@@ -160,7 +163,7 @@ if(!file.exists("output/figures")) dir.create("output/figures")
 
 {cairo_pdf("output/figures/iNat_obs_raw.pdf", width=11, height=5)
 
-ggplot(flr.raw.ln, aes(x=year, y=observations, fill=phenology)) + geom_bar(stat="identity", position="dodge") + labs(x="Year of observation", y="iNat records (research grade)") + scale_fill_manual(values=park_palette("JoshuaTree")[c(6,7,3,5)], name="Phenology") + dark_mode(theme_ipsum(base_size=14, axis_title_size=20)) + theme(plot.background=element_rect(color="black"))
+ggplot(filter(flr.raw.ln, as.numeric(as.character(year))>=2008), aes(x=year, y=observations, fill=phenology)) + geom_bar(stat="identity", position="dodge") + labs(x="Year of observation", y="iNat records (research grade)") + scale_fill_manual(values=park_palette("JoshuaTree")[c(6,7,3,5)], name="Phenology") + dark_mode(theme_ipsum(base_size=14, axis_title_size=20)) + theme(plot.background=element_rect(color="black"))
 
 }
 dev.off()

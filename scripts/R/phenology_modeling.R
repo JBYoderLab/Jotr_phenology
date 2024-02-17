@@ -1,6 +1,6 @@
 # Using BARTs to model Joshua tree flowering
 # best run on MAJEL
-# last used/modified jby, 2023.07.05
+# last used/modified jby, 2023.12.22
 
 rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -106,6 +106,7 @@ jotr.mod.step <- bart.step(y.data=as.numeric(flow2[,"flr"]), x.data=flow2[,xname
 
 invisible(jotr.mod.step$fit$state)
 write_rds(jotr.mod.step, file="output/BART/bart.step.model.Jotr.rds")
+# jotr.mod.step <- read_rds("output/BART/bart.step.model.Jotr.rds")
 
 summary(jotr.mod.step) # AUC is up, interesting
 
@@ -156,7 +157,7 @@ writeRaster(spYr, paste("output/BART/Jotr_BART_spartials_", yr,".grd", sep=""), 
 # Partials and spartials in example years
 
 # and then spartials ...
-sdm.pres <- read_sf("../data/Yucca/jotr_BART_sdm_pres", "jotr_BART_sdm_pres")
+sdm.pres <- read_sf("../data/Yucca/Jotr_SDM2023_range.shp")
 
 states <- read_sf(dsn = "../data/spatial/10m_cultural/", lay= "ne_10m_admin_1_states_provinces")
 coast <- read_sf("../data/spatial/10m_physical/ne_10m_coastline", "ne_10m_coastline")
@@ -172,7 +173,10 @@ goodSpart.df <- cbind(coordinates(goodSpart.mask), as.data.frame(goodSpart.mask)
 
 levels(goodSpart.df$predictor) <- c("Delta[Y1-2]*PPT", "Delta[Y0-1]*PPT", "Max*VPD[Y0]", "Delta[Y0-1]*Min*VPD", "Min*Temp[Y0]", "Delta[Y0-1]*Max*Temp", "PPT[Y0]", "PPT[Y1]", "Min*VPD[Y0]", "Delta[Y0-1]*Max*VPD", "Max*Temp[Y0]", "PPT[Y2]", "Delta[Y0-1]*Min*Temp")
 
-goodex <- ggplot(goodSpart.df, aes(x=lon, y=lat, fill=prFL)) + geom_tile() + facet_wrap("predictor", nrow=3, labeller="label_parsed") + scale_fill_gradient(low="#ffffcc", high="#253494", name="Marginal Pr(Flowers)", breaks=c(0.5,0.55,0.6,0.65), limits=c(0.5,0.675), labels=c("", 0.55, 0.6, 0.65)) + labs(title="Spatial partial effects for 2019") + theme_minimal() + theme(axis.title=element_blank(), axis.text=element_blank(), legend.position="bottom", legend.text=element_text(size=9), panel.background=element_rect(fill="white"), panel.grid=element_blank())
+goodex <- ggplot(goodSpart.df, aes(x=lon, y=lat, fill=prFL)) + geom_tile() + facet_wrap("predictor", nrow=3, labeller="label_parsed") + 
+	scale_fill_gradient(low="#ffffcc", high="#253494", name="Marginal Pr(Flowers)", breaks=c(0.5,0.55,0.6,0.65), limits=c(0.5,0.675), labels=c("", 0.55, 0.6, 0.65)) + 
+	labs(title="Spatial partial effects for 2019") + 
+	theme_minimal() + theme(axis.title=element_blank(), axis.text=element_blank(), legend.position="bottom", legend.text=element_text(size=9), panel.background=element_rect(fill="white"), panel.grid=element_blank())
 
 goodex
 
@@ -189,6 +193,14 @@ goodobs <- ggplot() +
 	labs(title="2019 observations") +
 	theme_bw(base_size=11) + theme(panel.grid.major = element_blank(), panel.background = element_rect(fill = "slategray3"), axis.title=element_blank(), axis.text=element_blank(), axis.ticks=element_blank(), legend.position=c(0.5, 0.1), legend.box.margin=unit(c(0.005, 0.005, 0.005, 0.005), "in"), legend.title=element_blank(), legend.text=element_text(size=9), plot.margin=unit(c(0.05,0.05,0.05,0.05), "in"), legend.key.size=unit(0.075, "in"), legend.key=element_rect(fill="#A8A378"), legend.spacing=unit(c(0.005, 0.005, 0.005, 0.005), "in"), legend.direction="horizontal", legend.background=element_rect(color="black", linewidth=0.1))
 
+# figure of good observations and spartials
+{cairo_pdf("output/figures/present_goodex_spartials.pdf", width=10, height=5)
+
+ggdraw() + draw_plot(goodobs, 0, 0.1, 0.4, 0.9) + draw_plot(goodex, 0.4, 0, 0.6, 0.99)
+
+}
+dev.off()
+
 
 # 2020, "bad year" example
 badSpart <- brick("output/BART/Jotr_BART_spartials_2020.grd")
@@ -202,6 +214,7 @@ levels(badSpart.df$predictor) <- c("Delta[Y1-2]*PPT", "Delta[Y0-1]*PPT", "Max*VP
 
 badex <- ggplot(badSpart.df, aes(x=lon, y=lat, fill=prFL)) + geom_tile() + facet_wrap("predictor", nrow=3, labeller="label_parsed") + scale_fill_gradient(low="#ffffcc", high="#253494", name="Marginal Pr(Flowers)", breaks=c(0.5,0.55,0.6,0.65), limits=c(0.5,0.675), labels=c("", 0.55, 0.6, 0.65)) + labs(title="Spatial partial effects for 2020") + theme_minimal() + theme(axis.title=element_blank(), axis.text=element_blank(), legend.position="bottom", legend.text=element_text(size=9), panel.background=element_rect(fill="white"), panel.grid=element_blank())
 
+badex
 
 # map of observations
 badobs <- ggplot() + 
@@ -218,6 +231,17 @@ badobs <- ggplot() +
 
 badobs
 
+# figure of bad-year observations and spartials
+{cairo_pdf("output/figures/present_badex_spartials.pdf", width=10, height=5)
+
+ggdraw() + draw_plot(badobs, 0, 0.1, 0.4, 0.9) + draw_plot(badex, 0.4, 0, 0.6, 0.99)
+
+}
+dev.off()
+
+
+
+
 # lower panel assembly
 spartials <- goodex + badex + plot_layout(guides="collect") & theme(legend.position="bottom", legend.text=element_text(size=9), legend.key.height=unit(0.15, "in"), legend.box.margin=unit(c(0.01,0.05,0.01,0.05), "in"), plot.margin=unit(c(0.05,0.1,0.1,0.1),"in"))
 
@@ -233,7 +257,7 @@ dev.off()
 #-------------------------------------------------------------------------
 # Partials and spartials in each year with observations, for SI
 
-sdm.pres <- read_sf("../data/Yucca/jotr_BART_sdm_pres", "jotr_BART_sdm_pres")
+sdm.pres <- read_sf("../data/Yucca/Jotr_SDM2023_range.shp")
 
 states <- read_sf(dsn = "../data/spatial/10m_cultural/", lay= "ne_10m_admin_1_states_provinces")
 coast <- read_sf("../data/spatial/10m_physical/ne_10m_coastline", "ne_10m_coastline")
@@ -323,8 +347,8 @@ write.table(LOOvalid, "output/BART/year-year-LOO.csv", sep=",", col.names=TRUE, 
 
 # LOOvalid <- read.csv("output/BART/year-year-LOO.csv")
 
-mean(LOOvalid$AUC) # 0.57
-sd(LOOvalid$AUC) # 0.17
+mean(LOOvalid$AUC) # 0.60
+sd(LOOvalid$AUC) # 0.18
 sd(LOOvalid$AUC)/sqrt(nrow(LOOvalid)) # SE = 0.05
 
 ggplot(LOOvalid, aes(x=N_flr, y=AUC)) + geom_point()
@@ -441,6 +465,8 @@ LOOvalidRI <- rbind(LOOvalidRI, data.frame(year=yr, N_flr=length(which(oobag$flr
 LOOvalidRI <- LOOvalidRI |> arrange(year) # eeeeeh
 
 write.table(LOOvalidRI, "output/BART/RI_year-year-LOO.csv", sep=",", col.names=TRUE, row.names=FALSE)
+
+# LOOvalidRI <- read.csv( "output/BART/RI_year-year-LOO.csv")
 
 mean(LOOvalidRI$AUC) # 0.59
 sd(LOOvalidRI$AUC) # 0.15

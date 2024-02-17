@@ -1,6 +1,6 @@
 # Using BARTs to model Joshua tree flowering
 # best run on MAJEL
-# last used/modified jby, 2023.03.31
+# last used/modified jby, 2024.01.22
 
 rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 

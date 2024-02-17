@@ -1,5 +1,5 @@
 # Using BARTs to predict historical Joshua tree flowering
-# last used/modified jby, 2023.04.29
+# last used/modified jby, 2024.01.22
 
 # rm(list=ls())  # Clears memory of all objects -- useful for debugging! But doesn't kill packages.
 
@@ -9,7 +9,7 @@ library("tidyverse")
 
 library("embarcadero")
 
-MojExt <- c(-119, -112, 33, 38) # need this later!!
+MojExt <- c(-119, -112, 33, 40) # need this later!!
 
 
 #-----------------------------------------------------------
@@ -17,13 +17,16 @@ MojExt <- c(-119, -112, 33, 38) # need this later!!
 flow <- read.csv("output/flowering_obs_climate_subsp.csv") # flowering/not flowering, gridded and annualized
 flow2 <- flow %>% filter(!(year==2018.5 & flr==TRUE), year>=2008) %>% mutate(year=floor(year)) # drop the late-flowering anomaly
 
-glimpse(flow2) # 2,632 observations, 13 candidate predictors
+glimpse(flow2) # 3,148 records with 2023 now
+filter(flow2, year!=2023) %>% glimpse() # 2,632 observations, 13 candidate predictors
 
 yubr <- filter(flow2, type=="YUBR")
-glimpse(yubr) # 1,460 observations for Y brevifolia
-yuja <- filter(flow2, type=="YUJA")
-glimpse(yuja) # 1,172 for Y jaegeriana
+glimpse(yubr) 
+filter(yubr, year!=2023) %>% glimpse() # 1,460 observations for Y brevifolia
 
+yuja <- filter(flow2, type=="YUJA")
+glimpse(yuja) 
+filter(yuja, year!=2023) %>% glimpse() # 1,172 for Y jaegeriana
 
 
 #-----------------------------------------------------------
@@ -40,9 +43,9 @@ summary(jotr.mod)
 jotr.preds <- attr(jotr.mod$fit$data@x, "term.labels")
 
 # LOOP over years
-for(yr in 1900:2022){
+for(yr in 1900:2023){
 
-# yr <- 1900
+# yr <- 2023
 
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
@@ -65,9 +68,9 @@ jotr.RImod <- read_rds(file="output/BART/bart.ri.model.Jotr.rds") # this now WOR
 jotr.preds <- attr(jotr.RImod$fit[[1]]$data@x, "term.labels")
 
 # LOOP over years
-for(yr in 1900:2022){
+for(yr in 1900:2023){
 
-# yr <- 1900
+# yr <- 2023
 
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
@@ -92,9 +95,9 @@ summary(yuja.mod)
 yuja.preds <- attr(yuja.mod$fit$data@x, "term.labels")
 
 # LOOP over years
-for(yr in 1900:2022){
+for(yr in 1900:2023){
 
-# yr <- 1900
+# yr <- 2023
 
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
@@ -118,9 +121,9 @@ summary(yubr.mod)
 yubr.preds <- attr(yubr.mod$fit$data@x, "term.labels")
 
 # LOOP over years
-for(yr in 1900:2022){
+for(yr in 1900:2023){
 
-# yr <- 1900
+# yr <- 2023
 
 preds <- brick(paste("data/PRISM/derived_predictors/PRISM_derived_predictors_",yr,".gri", sep=""))
 
